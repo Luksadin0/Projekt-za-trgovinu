@@ -54,7 +54,7 @@ void ispisiNarudzbe(NARUDZBA* nar, int n) {
         return;
     }
     printf("\n%-5s %-8s %-10s %-8s %12s %-12s %-14s\n",
-        "ID", "KupacID", "ProizvodID", "Kolicina", "Ukupno(kn)", "Datum", "Status");
+        "ID", "KupacID", "ProizvodID", "Kolicina", "Ukupno(EUR)", "Datum", "Status");
     printf("%-5s %-8s %-10s %-8s %12s %-12s %-14s\n",
         "-----", "--------", "----------", "--------",
         "------------", "------------", "--------------");
@@ -69,7 +69,8 @@ void ispisiNarudzbe(NARUDZBA* nar, int n) {
 void dodajNarudzbu(const char* dat_nar,
     const char* dat_kupci,
     const char* dat_proizvodi) {
-    /* Ucitaj kupce i prikazi */
+
+
     int nk = 0;
     KUPAC* kupci = ucitajKupce(dat_kupci, &nk);
     if (!kupci || nk == 0) {
@@ -80,7 +81,6 @@ void dodajNarudzbu(const char* dat_nar,
     printf("\n--- Dostupni kupci ---\n");
     ispisiKupce(kupci, nk);
 
-    /* Ucitaj proizvode i prikazi */
     int np = 0;
     PROIZVOD* proizvodi = ucitajProizvode(dat_proizvodi, &np);
     if (!proizvodi || np == 0) {
@@ -92,13 +92,11 @@ void dodajNarudzbu(const char* dat_nar,
     printf("\n--- Dostupni proizvodi ---\n");
     ispisiProizvode(proizvodi, np);
 
-    /* Unos podataka narudzbe */
     NARUDZBA novi;
     int n = 0;
     NARUDZBA* nar = ucitajNarudzbe(dat_nar, &n);
     novi.id = sljedeciID(nar, n);
 
-    /* Provjeri kupca */
     int kupacID;
     printf("\nID kupca: ");
     scanf("%d", &kupacID); ocistiBuffer();
@@ -111,7 +109,7 @@ void dodajNarudzbu(const char* dat_nar,
     }
     novi.kupac_id = kupacID;
 
-    /* Provjeri proizvod */
+    
     int proizvID;
     printf("ID proizvoda: ");
     scanf("%d", &proizvID); ocistiBuffer();
@@ -124,7 +122,7 @@ void dodajNarudzbu(const char* dat_nar,
     }
     novi.proizvod_id = proizvID;
 
-    /* Kolicina i cijena */
+    
     printf("Kolicina: ");
     scanf("%d", &novi.kolicina); ocistiBuffer();
     if (novi.kolicina <= 0) {
@@ -133,12 +131,12 @@ void dodajNarudzbu(const char* dat_nar,
     }
     novi.ukupna_cijena = proizvodi[pidx].cijena * novi.kolicina;
 
-    /* Datum i status */
+    
     danasnjiDatum(novi.datum, sizeof(novi.datum));
     strncpy(novi.status, "Na cekanju", sizeof(novi.status) - 1);
     novi.status[sizeof(novi.status) - 1] = '\0';
 
-    /* Prikazi pregled narudzbe */
+    
     printf("\n--- Pregled narudzbe ---\n");
     printf("Kupac    : %s %s\n", kupci[kidx].ime, kupci[kidx].prezime);
     printf("Proizvod : %s\n", proizvodi[pidx].ime);
@@ -157,7 +155,7 @@ void dodajNarudzbu(const char* dat_nar,
         free(kupci); free(proizvodi); if (nar) free(nar); return;
     }
 
-    /* Proširi niz i spremi */
+    
     NARUDZBA* tmp = realloc(nar, (n + 1) * sizeof(NARUDZBA));
     if (!tmp) {
         printf("Greska pri alokaciji.\n");
@@ -195,7 +193,7 @@ void urediNarudzbu(const char* datoteka) {
         free(nar); return;
     }
 
-    /* Dozvoljeno uredivanje: status i kolicina */
+   
     printf("\nTrenutni status [%s]\n", nar[idx].status);
     printf("  1. Na cekanju\n  2. Isporuceno\n  3. Otkazano\n");
     printf("  0. Zadrzati trenutni\n");
@@ -269,7 +267,7 @@ void pretraziNarudzbe(NARUDZBA* nar, int n) {
     scanf("%d", &opcija); ocistiBuffer();
 
     printf("\n%-5s %-8s %-10s %-8s %12s %-12s %-14s\n",
-        "ID", "KupacID", "ProizvodID", "Kolicina", "Ukupno(kn)", "Datum", "Status");
+        "ID", "KupacID", "ProizvodID", "Kolicina", "Ukupno(EUR)", "Datum", "Status");
     printf("%-5s %-8s %-10s %-8s %12s %-12s %-14s\n",
         "-----", "--------", "----------", "--------",
         "------------", "------------", "--------------");
@@ -337,8 +335,18 @@ void izbornikNarudzbe(const char* dat_nar,
     NARUDZBA* nar = NULL;
     int       n = 0;
 
+    typedef enum {
+        NARUDZBA_DODAJ = 1,
+        NARUDZBA_UCITAJ = 2,
+        NARUDZBA_ISPISI = 3,
+        NARUDZBA_UREDI = 4,
+        NARUDZBA_OBRISI = 5,
+        NARUDZBA_PRETRAZI = 6,
+        NARUDZBA_POVRATAK = 7
+    } OpcijaNarudzbe;
+
     while (1) {
-        printf("\n--- UPRAVLJANJE NARUDZB AMA ---\n");
+        printf("\n--- UPRAVLJANJE NARUDZBAMA ---\n");
         printf("  1. Dodaj novu narudzbu\n");
         printf("  2. Ucitaj narudzbe iz datoteke\n");
         printf("  3. Ispisi sve narudzbe\n");
@@ -349,24 +357,24 @@ void izbornikNarudzbe(const char* dat_nar,
         printf("Izbor: ");
         scanf("%d", &izbor); ocistiBuffer();
 
-        switch (izbor) {
-        case 1: dodajNarudzbu(dat_nar, dat_kupci, dat_proizvodi); break;
-        case 2:
+        switch ((OpcijaNarudzbe)izbor) {
+        case NARUDZBA_DODAJ: dodajNarudzbu(dat_nar, dat_kupci, dat_proizvodi); break;
+        case NARUDZBA_UCITAJ:
             if (nar) free(nar);
             nar = ucitajNarudzbe(dat_nar, &n);
             printf(nar ? "Ucitano %d narudzbi.\n" : "Datoteka prazna ili ne postoji.\n", n);
             break;
-        case 3: ispisiNarudzbe(nar, n); break;
-        case 4:
+        case NARUDZBA_ISPISI: ispisiNarudzbe(nar, n); break;
+        case NARUDZBA_UREDI:
             urediNarudzbu(dat_nar);
             if (nar) { free(nar); nar = ucitajNarudzbe(dat_nar, &n); }
             break;
-        case 5:
+        case NARUDZBA_OBRISI:
             obrisiNarudzbu(dat_nar);
             if (nar) { free(nar); nar = ucitajNarudzbe(dat_nar, &n); }
             break;
-        case 6: pretraziNarudzbe(nar, n); break;
-        case 7:
+        case NARUDZBA_PRETRAZI: pretraziNarudzbe(nar, n); break;
+        case NARUDZBA_POVRATAK:
             if (nar) { free(nar); nar = NULL; n = 0; }
             return;
         default:

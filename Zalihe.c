@@ -5,6 +5,15 @@
 #include "zalihe.h"
 #include "pomocnici.h"
 
+typedef enum {
+    ZALIHA_DODAJ = 1,
+    ZALIHA_UCITAJ = 2,
+    ZALIHA_ISPISI = 3,
+    ZALIHA_UREDI = 4,
+    ZALIHA_OBRISI = 5,
+    ZALIHA_NISKA = 6,
+    ZALIHA_POVRATAK = 7
+} OpcijaZalihe;
 
 static int postojiProizvodID(ZALIHA* z, int n, int id) {
     for (int i = 0; i < n; i++)
@@ -205,6 +214,8 @@ void obrisiZalihu(const char* datoteka) {
     free(z);
 }
 
+
+
 void izbornikZalihe(const char* datoteka) {
     int     izbor;
     ZALIHA* z = NULL;
@@ -222,25 +233,25 @@ void izbornikZalihe(const char* datoteka) {
         printf("Izbor: ");
         scanf("%d", &izbor); ocistiBuffer();
 
-        switch (izbor) {
-        case 1: dodajZalihu(datoteka); break;
-        case 2:
+        switch ((OpcijaZalihe)izbor) {
+        case ZALIHA_DODAJ: dodajZalihu(datoteka); break;
+        case ZALIHA_UCITAJ:
             if (z) free(z);
             z = ucitajZalihe(datoteka, &n);
             printf(z ? "Ucitano %d stavki zaliha.\n"
                 : "Datoteka prazna ili ne postoji.\n", n);
             break;
-        case 3: ispisiZalihe(z, n); break;
-        case 4:
+        case ZALIHA_ISPISI: ispisiZalihe(z, n); break;
+        case ZALIHA_UREDI:
             urediZalihu(datoteka);
             if (z) { free(z); z = ucitajZalihe(datoteka, &n); }
             break;
-        case 5:
+        case ZALIHA_OBRISI:
             obrisiZalihu(datoteka);
             if (z) { free(z); z = ucitajZalihe(datoteka, &n); }
             break;
-        case 6: prikaziNiskuZalihu(z, n); break;
-        case 7:
+        case ZALIHA_NISKA: prikaziNiskuZalihu(z, n); break;
+        case ZALIHA_POVRATAK:
             if (z) { free(z); z = NULL; n = 0; }
             return;
         default:

@@ -5,6 +5,12 @@
 #include "proizvodi.h"
 #include "pomocnici.h"
 
+typedef enum {
+    PRETRAGA_P_ID = 1,
+    PRETRAGA_P_IME = 2,
+    PRETRAGA_P_KATEGORIJA = 3,
+    PRETRAGA_P_CIJENA = 4
+} OpcijaPretragaProizvod;
 
 static int sljedeciID(PROIZVOD* p, int n) {
     int maks = 0;
@@ -48,7 +54,7 @@ void ispisiProizvode(PROIZVOD* p, int n) {
     printf("%-5s %-30s %-20s %12s\n",
         "-----", "------------------------------", "--------------------", "------------");
     for (int i = 0; i < n; i++)
-        printf("%-5d %-30s %-20s %10.2f kn\n",
+        printf("%-5d %-30s %-20s %10.2f EUR\n",
             p[i].id, p[i].ime, p[i].kategorija, p[i].cijena);
     printf("Ukupno: %d proizvod(a)\n", n);
 }
@@ -63,7 +69,7 @@ void dodajProizvod(const char* datoteka) {
     printf("Ime proizvoda   : "); citajLiniju(novi.ime, sizeof(novi.ime));
     printf("Kategorija      : "); citajLiniju(novi.kategorija, sizeof(novi.kategorija));
 
-    printf("Cijena (kn)     : ");
+    printf("Cijena (EUR)     : ");
     while (scanf("%f", &novi.cijena) != 1 || novi.cijena < 0) {
         printf("Nevazeci unos. Unesite pozitivan broj: ");
         ocistiBuffer();
@@ -145,7 +151,7 @@ void obrisiProizvod(const char* datoteka) {
     }
 
     char potvrda[10];
-    printf("Brisanje proizvoda '%s' (%.2f kn). Potvrdite (da/ne): ",
+    printf("Brisanje proizvoda '%s' (%.2f EUR). Potvrdite (da/ne): ",
         p[idx].ime, p[idx].cijena);
     citajLiniju(potvrda, sizeof(potvrda));
 
@@ -154,7 +160,7 @@ void obrisiProizvod(const char* datoteka) {
         free(p); return;
     }
 
-    /* Pomakni elemente ulijevo */
+    
     for (int i = idx; i < n - 1; i++)
         p[i] = p[i + 1];
     n--;
@@ -183,8 +189,8 @@ void pretraziProizvode(PROIZVOD* p, int n) {
     printf("%-5s %-30s %-20s %12s\n",
         "-----", "------------------------------", "--------------------", "------------");
 
-    switch (opcija) {
-    case 1: {
+    switch ((OpcijaPretragaProizvod)opcija) {
+    case PRETRAGA_P_ID: {
         int id;
         printf("ID: "); scanf("%d", &id); ocistiBuffer();
         for (int i = 0; i < n; i++)
@@ -195,7 +201,7 @@ void pretraziProizvode(PROIZVOD* p, int n) {
             }
         break;
     }
-    case 2: {
+    case PRETRAGA_P_IME: {
         char upit[50];
         printf("Dio imena: "); citajLiniju(upit, sizeof(upit));
         for (int i = 0; i < n; i++)
@@ -206,7 +212,7 @@ void pretraziProizvode(PROIZVOD* p, int n) {
             }
         break;
     }
-    case 3: {
+    case PRETRAGA_P_KATEGORIJA: {
         char upit[30];
         printf("Kategorija: "); citajLiniju(upit, sizeof(upit));
         for (int i = 0; i < n; i++)
@@ -217,7 +223,7 @@ void pretraziProizvode(PROIZVOD* p, int n) {
             }
         break;
     }
-    case 4: {
+    case PRETRAGA_P_CIJENA: {
         float mn, mx;
         printf("Min cijena: "); scanf("%f", &mn); ocistiBuffer();
         printf("Max cijena: "); scanf("%f", &mx); ocistiBuffer();
@@ -232,9 +238,20 @@ void pretraziProizvode(PROIZVOD* p, int n) {
     default:
         printf("Nevazeci izbor.\n"); return;
     }
+    if (!pron) printf("Nista pronadeno.\n");
 
     if (!pron) printf("Nista pronadeno.\n");
 }
+
+typedef enum {
+    PROIZVOD_DODAJ = 1,
+    PROIZVOD_UCITAJ = 2,
+    PROIZVOD_ISPISI = 3,
+    PROIZVOD_UREDI = 4,
+    PROIZVOD_OBRISI = 5,
+    PROIZVOD_PRETRAZI = 6,
+    PROIZVOD_POVRATAK = 7
+} OpcijaProizvodi;
 
 void izbornikProizvodi(const char* datoteka) {
     int       izbor;
@@ -253,24 +270,24 @@ void izbornikProizvodi(const char* datoteka) {
         printf("Izbor: ");
         scanf("%d", &izbor); ocistiBuffer();
 
-        switch (izbor) {
-        case 1: dodajProizvod(datoteka); break;
-        case 2:
+        switch ((OpcijaProizvodi)izbor) {
+        case PROIZVOD_DODAJ: dodajProizvod(datoteka); break;
+        case PROIZVOD_UCITAJ:
             if (p) free(p);
             p = ucitajProizvode(datoteka, &n);
             printf(p ? "Ucitano %d proizvoda.\n" : "Datoteka prazna ili ne postoji.\n", n);
             break;
-        case 3: ispisiProizvode(p, n); break;
-        case 4:
+        case PROIZVOD_ISPISI: ispisiProizvode(p, n); break;
+        case PROIZVOD_UREDI:
             urediProizvod(datoteka);
             if (p) { free(p); p = ucitajProizvode(datoteka, &n); }
             break;
-        case 5:
+        case PROIZVOD_OBRISI:
             obrisiProizvod(datoteka);
             if (p) { free(p); p = ucitajProizvode(datoteka, &n); }
             break;
-        case 6: pretraziProizvode(p, n); break;
-        case 7:
+        case PROIZVOD_PRETRAZI: pretraziProizvode(p, n); break;
+        case PROIZVOD_POVRATAK:
             if (p) { free(p); p = NULL; n = 0; }
             return;
         default:

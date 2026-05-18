@@ -13,6 +13,14 @@
 #define DAT_NARUDZBE  "narudzbe.dat"
 #define DAT_ZALIHE    "zalihe.dat"
 
+typedef enum {
+    IZBORNIK_PROIZVODI = 1,
+    IZBORNIK_KUPCI = 2,
+    IZBORNIK_NARUDZBE = 3,
+    IZBORNIK_ZALIHE = 4,
+    IZBORNIK_IZLAZ = 5
+} OpcijaGlavni;
+
 int main(void) {
     int  izbor;
     char potvrda[10];
@@ -32,20 +40,22 @@ int main(void) {
         scanf("%d", &izbor);
         ocistiBuffer();
 
-        switch (izbor) {
-        case 1:
+
+
+        switch ((OpcijaGlavni)izbor) {
+        case IZBORNIK_PROIZVODI:
             izbornikProizvodi(DAT_PROIZVODI);
             break;
-        case 2:
+        case IZBORNIK_KUPCI:
             izbornikKupci(DAT_KUPCI);
             break;
-        case 3:
+        case IZBORNIK_NARUDZBE:
             izbornikNarudzbe(DAT_NARUDZBE, DAT_KUPCI, DAT_PROIZVODI);
             break;
-        case 4:
+        case IZBORNIK_ZALIHE:
             izbornikZalihe(DAT_ZALIHE);
             break;
-        case 5:
+        case IZBORNIK_IZLAZ:
             printf("Jeste li sigurni da zelite zavrsiti? (da/ne): ");
             citajLiniju(potvrda, sizeof(potvrda));
             if (strcmp(potvrda, "da") == 0) {
