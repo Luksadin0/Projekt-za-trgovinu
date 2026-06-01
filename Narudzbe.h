@@ -1,9 +1,9 @@
 #ifndef NARUDZBE_H
 #define NARUDZBE_H
 
-/* ------------------------------------------------------------------ */
-/*  Struktura NARUDZBA (tocke 3, 4)                                    */
-/* ------------------------------------------------------------------ */
+
+/*  Struktura NARUDZBA (tocke 3, 4)*/
+
 typedef struct {
     int   id;
     int   kupac_id;
@@ -14,9 +14,8 @@ typedef struct {
     char  status[20];   /* Na cekanju | Isporuceno | Otkazano */
 } NARUDZBA;
 
-/* ------------------------------------------------------------------ */
-/*  Enum tipovi izbornika (tocka 11)                                   */
-/* ------------------------------------------------------------------ */
+/*  Enum tipovi izbornika (tocka 11)*/
+
 typedef enum {
     NARUDZBA_DODAJ = 1,
     NARUDZBA_UCITAJ = 2,
@@ -42,9 +41,8 @@ typedef enum {
     STATUS_ZADRZATI = 0
 } OpcijaStatus;
 
-/* ------------------------------------------------------------------ */
-/*  Deklaracije funkcija                                               */
-/* ------------------------------------------------------------------ */
+/*  Deklaracije funkcija */
+
 void      izbornikNarudzbe(const char* dat_nar,
     const char* dat_kupci,
     const char* dat_proizvodi);

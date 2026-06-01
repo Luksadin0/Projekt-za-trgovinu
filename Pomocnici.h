@@ -5,10 +5,6 @@
 #include <string.h>
 #include <errno.h>
 
-/* ------------------------------------------------------------------ */
-/*  Inline pomocne funkcije (tocka 9)                                  */
-/* ------------------------------------------------------------------ */
-
 /* Cisti stdin buffer nakon scanf */
 static inline void ocistiBuffer(void) {
     int c;
@@ -24,12 +20,11 @@ static inline void citajLiniju(char* buf, int vel) {
         buf[0] = '\0';
 }
 
-/* Ispis sistemske greske (tocka 22) */
+/* Ispis sistemske greske*/
 static inline void ispisiGresku(const char* kontekst) {
     fprintf(stderr, "[GRESKA] %s: %s\n", kontekst, strerror(errno));
 }
 
-/* Sigurno kopiranje stringa s null-terminatorom */
 static inline void sigurnoKopiraj(char* odrediste, const char* izvor,
     size_t vel) {
     if (!odrediste || !izvor || vel == 0) return;
@@ -37,18 +32,12 @@ static inline void sigurnoKopiraj(char* odrediste, const char* izvor,
     odrediste[vel - 1] = '\0';
 }
 
-/* ------------------------------------------------------------------ */
-/*  Pomocne funkcije za datoteke (tocka 21)                            */
-/* ------------------------------------------------------------------ */
+/*  Pomocne funkcije za datoteke (tocka 21)*/
 
-/*
- * Atomicno spremanje: pise u .tmp datoteku, zatim rename.
- * Vraca 1 uspjeh, 0 greska.
- */
-static inline int atomicnoSpremi(const char* datoteka,
-    const void* podaci,
-    int         n,
-    size_t      vel) {
+/*Atomicno spremanje: pise u .tmp datoteku, 
+zatim rename.Vraca 1 uspjeh, 0 greska.*/
+
+static inline int atomicnoSpremi(const char* datoteka,const void* podaci,int n,size_t vel) {
     char temp[512];
     snprintf(temp, sizeof(temp), "%s.tmp", datoteka);
 

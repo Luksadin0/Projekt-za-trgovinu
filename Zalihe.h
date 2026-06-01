@@ -1,9 +1,8 @@
 #ifndef ZALIHE_H
 #define ZALIHE_H
 
-/* ------------------------------------------------------------------ */
-/*  Struktura ZALIHA (tocke 3, 4)                                      */
-/* ------------------------------------------------------------------ */
+/*  Struktura ZALIHA (tocke 3, 4)*/
+
 typedef struct {
     int  proizvod_id;
     char naziv[50];
@@ -12,9 +11,8 @@ typedef struct {
     char lokacija[50];
 } ZALIHA;
 
-/* ------------------------------------------------------------------ */
-/*  Enum tipovi izbornika (tocka 11)                                   */
-/* ------------------------------------------------------------------ */
+/*  Enum tipovi izbornika (tocka 11)*/
+
 typedef enum {
     ZALIHA_DODAJ = 1,
     ZALIHA_UCITAJ = 2,
@@ -26,9 +24,7 @@ typedef enum {
     ZALIHA_SORTIRAJ = 8
 } OpcijaZalihe;
 
-/* ------------------------------------------------------------------ */
-/*  Deklaracije funkcija                                               */
-/* ------------------------------------------------------------------ */
+/*  Deklaracije funkcija*/
 void    izbornikZalihe(const char* datoteka);
 void    dodajZalihu(const char* datoteka);
 ZALIHA* ucitajZalihe(const char* datoteka, int* n);

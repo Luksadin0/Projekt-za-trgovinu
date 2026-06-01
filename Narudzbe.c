@@ -9,9 +9,7 @@
 #include "proizvodi.h"
 #include "pomocnici.h"
 
-/* ------------------------------------------------------------------ */
-/*  Static pomocne funkcije (tocka 6)                                  */
-/* ------------------------------------------------------------------ */
+/*  Static pomocne funkcije (tocka 6)*/
 
 static int sljedeciID(NARUDZBA* nar, int n) {
     int maks = 0;
@@ -27,9 +25,7 @@ static void danasnjiDatum(char* buf, int vel) {
     strftime(buf, (size_t)vel, "%d.%m.%Y", tmInfo);
 }
 
-/* ------------------------------------------------------------------ */
-/*  Komparatori za qsort i bsearch (tocke 23, 24, 26)                  */
-/* ------------------------------------------------------------------ */
+/*  Komparatori za qsort i bsearch (tocke 23, 24, 26)*/
 
 /* Pokazivac na funkciju – sortiranje po datumu (leksikografski) */
 static int usporediDatum(const void* a, const void* b) {
@@ -43,9 +39,8 @@ static int usporediNarudzbaID(const void* kljuc, const void* elem) {
     return id - ((const NARUDZBA*)elem)->id;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Rekurzivni binarni search po ID-u (tocka 25)                       */
-/* ------------------------------------------------------------------ */
+/*  Rekurzivni binarni search po ID-u (tocka 25)*/
+
 static int binSearchNarudzbaRek(NARUDZBA* nar, int lijevo, int desno,
     int trazeniID) {
     if (lijevo > desno) return -1;
@@ -56,9 +51,7 @@ static int binSearchNarudzbaRek(NARUDZBA* nar, int lijevo, int desno,
     return binSearchNarudzbaRek(nar, lijevo, sredina - 1, trazeniID);
 }
 
-/* ------------------------------------------------------------------ */
-/*  CRUD funkcije                                                       */
-/* ------------------------------------------------------------------ */
+/*  CRUD funkcije*/
 
 NARUDZBA* ucitajNarudzbe(const char* datoteka, int* n) {
     if (!datoteka || !n) return NULL;
@@ -332,9 +325,7 @@ void obrisiNarudzbu(const char* datoteka) {
     free(nar); nar = NULL;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Sortiranje i pretraga (tocke 23, 24, 26)                           */
-/* ------------------------------------------------------------------ */
+/*  Sortiranje i pretraga (tocke 23, 24, 26)*/
 
 void sortirajNarudzbe(NARUDZBA* nar, int n) {
     if (!nar || n <= 1) return;
@@ -421,9 +412,7 @@ void pretraziNarudzbe(NARUDZBA* nar, int n) {
     if (!pron) printf("Nista pronadeno.\n");
 }
 
-/* ------------------------------------------------------------------ */
-/*  Izbornik (tocke 10, 11)                                            */
-/* ------------------------------------------------------------------ */
+/*  Izbornik (tocke 10, 11)*/
 
 void izbornikNarudzbe(const char* dat_nar,
     const char* dat_kupci,

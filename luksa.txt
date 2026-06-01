@@ -1,0 +1,2334 @@
+#ifndef POMOCNICI_H
+#define POMOCNICI_H
+
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+
+/* Cisti stdin buffer nakon scanf */
+static inline void ocistiBuffer(void) {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+}
+
+/* Citanje linije s uklanjanjem newline znaka */
+static inline void citajLiniju(char* buf, int vel) {
+    if (!buf || vel <= 0) return;
+    if (fgets(buf, vel, stdin))
+        buf[strcspn(buf, "\n")] = '\0';
+    else
+        buf[0] = '\0';
+}
+
+/* Ispis sistemske greske */
+static inline void ispisiGresku(const char* kontekst) {
+    fprintf(stderr, "[GRESKA] %s: %s\n", kontekst, strerror(errno));
+}
+
+static inline void sigurnoKopiraj(char* odrediste, const char* izvor,
+    size_t vel) {
+    if (!odrediste || !izvor || vel == 0) return;
+    strncpy(odrediste, izvor, vel - 1);
+    odrediste[vel - 1] = '\0';
+}
+
+/*
+ * Sigurno citanje cijelog broja sa stdin-a.
+ * Stiti od EOF petlje (Ctrl+D) i nevazecih unosa.
+ * Vraca 1 ako je unos uspjesan, 0 ako je EOF ili greska.
+ */
+static inline int citajInt(int* out) {
+    if (!out) return 0;
+    while (1) {
+        int ret = scanf("%d", out);
+        if (ret == EOF) {
+            /* Korisnik je zatvorio stdin - vrati 0 */
+            clearerr(stdin);
+            return 0;
+        }
+        if (ret == 1) {
+            ocistiBuffer();
+            return 1;
+        }
+        /* Nevazeci unos - ocisti i pokusaj ponovo */
+        ocistiBuffer();
+        printf("Nevazeci unos. Unesite cijeli broj: ");
+    }
+}
+
+/*
+ * Sigurno citanje float vrijednosti sa stdin-a.
+ * Vraca 1 ako je unos uspjesan, 0 ako je EOF ili greska.
+ */
+static inline int citajFloat(float* out) {
+    if (!out) return 0;
+    while (1) {
+        int ret = scanf("%f", out);
+        if (ret == EOF) {
+            clearerr(stdin);
+            return 0;
+        }
+        if (ret == 1) {
+            ocistiBuffer();
+            return 1;
+        }
+        ocistiBuffer();
+        printf("Nevazeci unos. Unesite decimalni broj: ");
+    }
+}
+
+/*
+ * Osnovna validacija email adrese - provjerava postoji li '@' i '.'
+ * Vraca 1 ako je email valjan, 0 ako nije.
+ */
+static inline int validanEmail(const char* email) {
+    if (!email) return 0;
+    const char* at = strchr(email, '@');
+    if (!at || at == email) return 0;          /* nema '@' ili je na pocetku */
+    const char* tocka = strchr(at + 1, '.');
+    if (!tocka || tocka == at + 1) return 0;   /* nema '.' iza '@' */
+    if (*(tocka + 1) == '\0') return 0;        /* nista iza zadnje tocke */
+    return 1;
+}
+
+/*
+ * Osnovna validacija telefonskog broja - provjerava da sadrzi samo
+ * znamenke, razmake, '+', '-' i zagrade, te da ima barem 6 znakova.
+ * Vraca 1 ako je broj valjan, 0 ako nije.
+ */
+static inline int validanTelefon(const char* telefon) {
+    if (!telefon) return 0;
+    int duljina = 0;
+    for (int i = 0; telefon[i] != '\0'; i++) {
+        char c = telefon[i];
+        if (c >= '0' && c <= '9') { duljina++; continue; }
+        if (c == '+' || c == '-' || c == ' ' || c == '(' || c == ')') continue;
+        return 0; /* nedozvoljeni znak */
+    }
+    return (duljina >= 6) ? 1 : 0;
+}
+
+/*  Pomocne funkcije za datoteke (tocka 21)*/
+
+/*
+ * Atomicno spremanje: pise u .tmp datoteku,
+ * zatim rename. Vraca 1 uspjeh, 0 greska.
+ */
+static inline int atomicnoSpremi(const char* datoteka, const void* podaci,
+    int n, size_t vel) {
+    char temp[512];
+    snprintf(temp, sizeof(temp), "%s.tmp", datoteka);
+
+    FILE* fp = fopen(temp, "wb");
+    if (!fp) { ispisiGresku("fopen (temp)"); return 0; }
+
+    if (fwrite(&n, sizeof(int), 1, fp) != 1) {
+        ispisiGresku("fwrite (count)");
+        fclose(fp);
+        remove(temp);
+        return 0;
+    }
+    if (n > 0 && fwrite(podaci, vel, (size_t)n, fp) != (size_t)n) {
+        ispisiGresku("fwrite (data)");
+        fclose(fp);
+        remove(temp);
+        return 0;
+    }
+
+    fclose(fp);
+    remove(datoteka);                       /* tocka 21 - remove */
+    if (rename(temp, datoteka) != 0) {      /* tocka 21 - rename */
+        ispisiGresku("rename");
+        return 0;
+    }
+    return 1;
+}
+
+#endif /* POMOCNICI_H */
+
+
+
+
+
+#define _CRT_SECURE_NO_WARNINGS
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "Pomocnici.h"
+#include "Proizvodi.h"
+#include "Kupci.h"
+#include "Narudzbe.h"
+#include "Zalihe.h"
+
+#define DAT_PROIZVODI "proizvodi.dat"
+#define DAT_KUPCI     "kupci.dat"
+#define DAT_NARUDZBE  "narudzbe.dat"
+#define DAT_ZALIHE    "zalihe.dat"
+
+typedef enum {
+    IZBORNIK_PROIZVODI = 1,
+    IZBORNIK_KUPCI = 2,
+    IZBORNIK_NARUDZBE = 3,
+    IZBORNIK_ZALIHE = 4,
+    IZBORNIK_IZLAZ = 5
+} OpcijaGlavni;
+
+int main(void) {
+    int  izbor;
+    char potvrda[10];
+
+    while (1) {
+        printf("\n");
+        printf("==========================================\n");
+        printf("     SUSTAV UPRAVLJANJA TRGOVINOM\n");
+        printf("==========================================\n");
+        printf("  1. Upravljanje proizvodima\n");
+        printf("  2. Upravljanje kupcima\n");
+        printf("  3. Upravljanje narudzbama\n");
+        printf("  4. Upravljanje zalihama\n");
+        printf("  5. Izlaz\n");
+        printf("==========================================\n");
+        printf("Izbor: ");
+
+        if (!citajInt(&izbor)) {
+            printf("Unos prekinut. Izlaz iz programa.\n");
+            return 0;
+        }
+
+        switch ((OpcijaGlavni)izbor) {
+        case IZBORNIK_PROIZVODI:
+            izbornikProizvodi(DAT_PROIZVODI);
+            break;
+        case IZBORNIK_KUPCI:
+            izbornikKupci(DAT_KUPCI);
+            break;
+        case IZBORNIK_NARUDZBE:
+            /* dat_zalihe se prosljedjuje kako bi se zalihe automatski
+               azurirale pri dodavanju nove narudzbe */
+            izbornikNarudzbe(DAT_NARUDZBE, DAT_KUPCI, DAT_PROIZVODI, DAT_ZALIHE);
+            break;
+        case IZBORNIK_ZALIHE:
+            izbornikZalihe(DAT_ZALIHE);
+            break;
+        case IZBORNIK_IZLAZ:
+            printf("Jeste li sigurni da zelite zavrsiti? (da/ne): ");
+            citajLiniju(potvrda, sizeof(potvrda));
+            if (strcmp(potvrda, "da") == 0) {
+                printf("\nDovidjenja!\n");
+                return 0;
+            }
+            break;
+        default:
+            printf("Nevazeci izbor! Unesite broj od 1 do 5.\n");
+        }
+    }
+    return 0;
+}
+
+
+
+
+#define _CRT_SECURE_NO_WARNINGS
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include "Kupci.h"
+#include "Pomocnici.h"
+
+/* ------------------------------------------------------------------ */
+/*  Static pomocne funkcije (tocka 6)                                  */
+/* ------------------------------------------------------------------ */
+
+static int sljedeciID(KUPAC* k, int n) {
+    int maks = 0;
+    for (int i = 0; i < n; i++)
+        if (k[i].id > maks) maks = k[i].id;
+    return maks + 1;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Komparatori za qsort i bsearch (tocke 23, 24, 26)                 */
+/* ------------------------------------------------------------------ */
+
+/* Pokazivac na funkciju - komparator po prezimenu */
+static int usporediPrezime(const void* a, const void* b) {
+    return strcmp(((const KUPAC*)a)->prezime,
+                  ((const KUPAC*)b)->prezime);
+}
+
+/* Komparator za bsearch po ID-u (zahtijeva niz sortiran po ID-u) */
+static int usporediID(const void* kljuc, const void* elem) {
+    int id = *(const int*)kljuc;
+    return id - ((const KUPAC*)elem)->id;
+}
+
+/* Komparator za sortiranje po ID-u (koristi se prije bsearch-a) */
+static int usporediKupacIDSort(const void* a, const void* b) {
+    return ((const KUPAC*)a)->id - ((const KUPAC*)b)->id;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Rekurzivni binarni search po ID-u (tocka 25)                      */
+/*  NAPOMENA: niz mora biti sortiran po ID-u prije poziva!            */
+/* ------------------------------------------------------------------ */
+static int binSearchRekurzivno(KUPAC* k, int lijevo, int desno,
+                                int trazeniID) {
+    if (lijevo > desno) return -1;
+    int sredina = lijevo + (desno - lijevo) / 2;
+    if (k[sredina].id == trazeniID) return sredina;
+    if (k[sredina].id < trazeniID)
+        return binSearchRekurzivno(k, sredina + 1, desno, trazeniID);
+    return binSearchRekurzivno(k, lijevo, sredina - 1, trazeniID);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Linearni search po ID-u                                           */
+/*  Koristi se kad niz nije garantirano sortiran po ID-u.             */
+/* ------------------------------------------------------------------ */
+static int linearSearchID(KUPAC* k, int n, int trazeniID) {
+    for (int i = 0; i < n; i++)
+        if (k[i].id == trazeniID) return i;
+    return -1;
+}
+
+/* ------------------------------------------------------------------ */
+/*  CRUD funkcije                                                      */
+/* ------------------------------------------------------------------ */
+
+KUPAC* ucitajKupce(const char* datoteka, int* n) {
+    if (!datoteka || !n) return NULL;
+
+    FILE* fp = fopen(datoteka, "rb");
+    if (!fp) { *n = 0; return NULL; }
+
+    rewind(fp);   /* tocka 20 */
+
+    if (fread(n, sizeof(int), 1, fp) != 1 || *n <= 0) {
+        if (ferror(fp)) ispisiGresku("fread (count)");  /* tocka 22 */
+        fclose(fp); *n = 0; return NULL;
+    }
+
+    long pos = ftell(fp);   /* tocka 20 */
+    if (pos < 0) { ispisiGresku("ftell"); fclose(fp); *n = 0; return NULL; }
+
+    KUPAC* k = malloc((size_t)(*n) * sizeof(KUPAC));  /* tocka 17 */
+    if (!k) { ispisiGresku("malloc"); fclose(fp); *n = 0; return NULL; }
+
+    if ((int)fread(k, sizeof(KUPAC), (size_t)(*n), fp) != *n) {
+        if (ferror(fp)) ispisiGresku("fread (data)");  /* tocka 22 */
+        free(k); k = NULL; *n = 0; fclose(fp); return NULL;  /* tocka 18 */
+    }
+
+    fclose(fp);
+    return k;
+}
+
+int spremiKupce(const char* datoteka, KUPAC* k, int n) {
+    if (!datoteka) return 0;
+    return atomicnoSpremi(datoteka, k, n, sizeof(KUPAC));  /* tocka 21 */
+}
+
+void ispisiKupce(KUPAC* k, int n) {
+    if (!k || n <= 0) {   /* tocka 14 */
+        printf("Nema ucitanih kupaca. Koristite opciju 'Ucitaj kupce'.\n");
+        return;
+    }
+    printf("\n%-5s %-20s %-20s %-30s %-15s\n",
+        "ID", "Ime", "Prezime", "Email", "Telefon");
+    printf("%-5s %-20s %-20s %-30s %-15s\n",
+        "-----", "--------------------", "--------------------",
+        "------------------------------", "---------------");
+    for (int i = 0; i < n; i++)
+        printf("%-5d %-20s %-20s %-30s %-15s\n",
+            k[i].id, k[i].ime, k[i].prezime,
+            k[i].email, k[i].telefon);
+    printf("Ukupno: %d kupac(a)\n", n);
+}
+
+void dodajKupca(const char* datoteka) {
+    if (!datoteka) return;
+
+    int    n = 0;
+    KUPAC* k = ucitajKupce(datoteka, &n);
+
+    KUPAC novi;
+    memset(&novi, 0, sizeof(KUPAC));
+    novi.id = sljedeciID(k, n);
+
+    printf("Ime         : "); citajLiniju(novi.ime, sizeof(novi.ime));
+    if (novi.ime[0] == '\0') {
+        printf("Ime ne smije biti prazno.\n");
+        if (k) { free(k); k = NULL; }
+        return;
+    }
+
+    printf("Prezime     : "); citajLiniju(novi.prezime, sizeof(novi.prezime));
+    if (novi.prezime[0] == '\0') {
+        printf("Prezime ne smije biti prazno.\n");
+        if (k) { free(k); k = NULL; }
+        return;
+    }
+
+    /* Validacija emaila */
+    do {
+        printf("Email       : "); citajLiniju(novi.email, sizeof(novi.email));
+        if (!validanEmail(novi.email))
+            printf("Nevazeci email (mora sadrzavati '@' i '.'), pokusajte ponovo.\n");
+    } while (!validanEmail(novi.email));
+
+    /* Validacija telefona */
+    do {
+        printf("Telefon     : "); citajLiniju(novi.telefon, sizeof(novi.telefon));
+        if (!validanTelefon(novi.telefon))
+            printf("Nevazeci telefon (min. 6 znamenki, dozvoljeni znakovi: + - ( ) razmak), "
+                   "pokusajte ponovo.\n");
+    } while (!validanTelefon(novi.telefon));
+
+    printf("Adresa      : "); citajLiniju(novi.adresa, sizeof(novi.adresa));
+
+    KUPAC* tmp = realloc(k, (size_t)(n + 1) * sizeof(KUPAC));  /* tocka 17 */
+    if (!tmp) {
+        ispisiGresku("realloc");
+        free(k); k = NULL;  /* tocka 18 */
+        return;
+    }
+    k = tmp;
+    k[n++] = novi;
+
+    if (spremiKupce(datoteka, k, n))
+        printf("Kupac uspjesno dodan! (ID: %d)\n", novi.id);
+    else
+        printf("Greska pri spremanju datoteke.\n");
+
+    free(k); k = NULL;  /* tocka 18 */
+}
+
+void urediKupca(const char* datoteka) {
+    if (!datoteka) return;
+
+    int    n = 0;
+    KUPAC* k = ucitajKupce(datoteka, &n);
+    if (!k) { printf("Nema podataka za uredivanje.\n"); return; }
+
+    ispisiKupce(k, n);
+
+    int id;
+    printf("\nID kupca za uredivanje: ");
+    if (!citajInt(&id)) {
+        printf("Unos prekinut.\n");
+        free(k); k = NULL; return;
+    }
+
+    /*
+     * Koristimo linearni search jer niz nije nuzno sortiran po ID-u
+     * (mogao je biti sortiran po prezimenu ili redoslijedu dodavanja).
+     * Rekurzivni binarni search ostaje dostupan ali zahtijeva prethodni
+     * qsort po ID-u - sto bi promijenilo redoslijed zapisa u datoteci.
+     */
+    int idx = linearSearchID(k, n, id);
+    if (idx == -1) {
+        printf("Kupac s ID-om %d nije pronaden.\n", id);
+        free(k); k = NULL; return;
+    }
+
+    char buf[100];
+
+    printf("Ime [%s]: ", k[idx].ime);
+    citajLiniju(buf, sizeof(buf));
+    if (buf[0] != '\0') sigurnoKopiraj(k[idx].ime, buf, sizeof(k[idx].ime));
+
+    printf("Prezime [%s]: ", k[idx].prezime);
+    citajLiniju(buf, sizeof(buf));
+    if (buf[0] != '\0') sigurnoKopiraj(k[idx].prezime, buf, sizeof(k[idx].prezime));
+
+    /* Validacija emaila - dopusta zadrzavanje starog ako se unese prazan */
+    printf("Email [%s]: ", k[idx].email);
+    citajLiniju(buf, sizeof(buf));
+    if (buf[0] != '\0') {
+        if (!validanEmail(buf)) {
+            printf("Nevazeci email - email nije promijenjen.\n");
+        } else {
+            sigurnoKopiraj(k[idx].email, buf, sizeof(k[idx].email));
+        }
+    }
+
+    /* Validacija telefona - dopusta zadrzavanje starog ako se unese prazan */
+    printf("Telefon [%s]: ", k[idx].telefon);
+    citajLiniju(buf, sizeof(buf));
+    if (buf[0] != '\0') {
+        if (!validanTelefon(buf)) {
+            printf("Nevazeci telefon - telefon nije promijenjen.\n");
+        } else {
+            sigurnoKopiraj(k[idx].telefon, buf, sizeof(k[idx].telefon));
+        }
+    }
+
+    printf("Adresa [%s]: ", k[idx].adresa);
+    citajLiniju(buf, sizeof(buf));
+    if (buf[0] != '\0') sigurnoKopiraj(k[idx].adresa, buf, sizeof(k[idx].adresa));
+
+    if (spremiKupce(datoteka, k, n))
+        printf("Kupac ID %d uspjesno ureden.\n", id);
+    else
+        printf("Greska pri spremanju.\n");
+
+    free(k); k = NULL;
+}
+
+void obrisiKupca(const char* datoteka) {
+    if (!datoteka) return;
+
+    int    n = 0;
+    KUPAC* k = ucitajKupce(datoteka, &n);
+    if (!k) { printf("Nema podataka za brisanje.\n"); return; }
+
+    ispisiKupce(k, n);
+
+    int id;
+    printf("\nID kupca za brisanje: ");
+    if (!citajInt(&id)) {
+        printf("Unos prekinut.\n");
+        free(k); k = NULL; return;
+    }
+
+    int idx = linearSearchID(k, n, id);
+    if (idx == -1) {
+        printf("Kupac s ID-om %d nije pronaden.\n", id);
+        free(k); k = NULL; return;
+    }
+
+    /*
+     * Upozorenje: brisanje kupca ne brise automatski njegove narudzbe.
+     * Narudzbe s ovim kupac_id ostaju u sustavu kao "orphan" zapisi.
+     * Preporuka: rucno obrisati narudzbe kupca prije brisanja kupca.
+     */
+    printf("\n[UPOZORENJE] Brisanjem kupca njegove narudzbe NECE biti obrisane.\n");
+    printf("             Preporucuje se prethodno obrisati sve narudzbe kupca ID %d.\n\n", id);
+
+    char potvrda[10];
+    printf("Brisanje kupca '%s %s'. Potvrdite (da/ne): ",
+        k[idx].ime, k[idx].prezime);
+    citajLiniju(potvrda, sizeof(potvrda));
+
+    if (strcmp(potvrda, "da") != 0) {
+        printf("Brisanje odustano.\n");
+        free(k); k = NULL; return;
+    }
+
+    for (int i = idx; i < n - 1; i++)
+        k[i] = k[i + 1];
+    n--;
+    memset(&k[n], 0, sizeof(KUPAC));  /* tocka 18 */
+
+    if (spremiKupce(datoteka, k, n))
+        printf("Kupac uspjesno obrisan.\n");
+    else
+        printf("Greska pri spremanju.\n");
+
+    free(k); k = NULL;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Sortiranje (tocka 23) i pretraga (tocka 24)                       */
+/* ------------------------------------------------------------------ */
+
+void sortirajKupce(KUPAC* k, int n) {
+    if (!k || n <= 1) return;
+    /* tocka 23 - qsort, tocka 26 - pokazivac na funkciju usporediPrezime */
+    qsort(k, (size_t)n, sizeof(KUPAC), usporediPrezime);
+}
+
+/* tocka 24 - bsearch po ID-u */
+/* NAPOMENA: pozivatelj mora osigurati da je niz sortiran po ID-u     */
+KUPAC* nadjiKupcaID(KUPAC* k, int n, int trazeniID) {
+    if (!k || n <= 0) return NULL;
+    /* Sortiramo privremenu kopiju nije moguce - koristimo linearni search
+     * kako bi izbjegli mutiranje niza koji je mozda sortiran po prezimenu.
+     * Za bsearch koristiti samo kad je niz garantirano sortiran po ID-u. */
+    qsort(k, (size_t)n, sizeof(KUPAC), usporediKupacIDSort);
+    return (KUPAC*)bsearch(&trazeniID, k, (size_t)n,
+                           sizeof(KUPAC), usporediID);
+}
+
+void pretraziKupce(KUPAC* k, int n) {
+    if (!k || n <= 0) {
+        printf("Nema ucitanih podataka. Koristite opciju 'Ucitaj kupce'.\n");
+        return;
+    }
+
+    int opcija, pron = 0;
+    printf("\nPretraga po:\n");
+    printf("  1. ID-u\n  2. Prezimenu\n  3. Emailu\n  4. Telefonskom broju\n");
+    printf("Izbor: ");
+    if (!citajInt(&opcija)) { printf("Unos prekinut.\n"); return; }
+
+    printf("\n%-5s %-20s %-20s %-30s %-15s\n",
+        "ID", "Ime", "Prezime", "Email", "Telefon");
+    printf("%-5s %-20s %-20s %-30s %-15s\n",
+        "-----", "--------------------", "--------------------",
+        "------------------------------", "---------------");
+
+    switch ((OpcijaKupacPretraga)opcija) {
+    case KUPAC_PRETRAGA_ID: {
+        int id;
+        printf("ID: ");
+        if (!citajInt(&id)) { printf("Unos prekinut.\n"); return; }
+        /*
+         * Za bsearch niz mora biti sortiran po ID-u.
+         * Koristimo linearni search kako ne bismo mutirali redoslijed
+         * koji korisnik vidi u ispisu.
+         */
+        int idx = linearSearchID(k, n, id);
+        if (idx >= 0) {
+            printf("%-5d %-20s %-20s %-30s %-15s\n",
+                k[idx].id, k[idx].ime, k[idx].prezime,
+                k[idx].email, k[idx].telefon);
+            printf("Adresa: %s\n", k[idx].adresa);
+            pron = 1;
+        }
+        break;
+    }
+    case KUPAC_PRETRAGA_PREZIME: {
+        char upit[50];
+        printf("Dio prezimena: "); citajLiniju(upit, sizeof(upit));
+        for (int i = 0; i < n; i++)
+            if (strstr(k[i].prezime, upit)) {
+                printf("%-5d %-20s %-20s %-30s %-15s\n",
+                    k[i].id, k[i].ime, k[i].prezime,
+                    k[i].email, k[i].telefon);
+                pron = 1;
+            }
+        break;
+    }
+    case KUPAC_PRETRAGA_EMAIL: {
+        char upit[80];
+        printf("Email: "); citajLiniju(upit, sizeof(upit));
+        for (int i = 0; i < n; i++)
+            if (strstr(k[i].email, upit)) {
+                printf("%-5d %-20s %-20s %-30s %-15s\n",
+                    k[i].id, k[i].ime, k[i].prezime,
+                    k[i].email, k[i].telefon);
+                pron = 1;
+            }
+        break;
+    }
+    case KUPAC_PRETRAGA_TELEFON: {
+        char upit[20];
+        printf("Telefon: "); citajLiniju(upit, sizeof(upit));
+        for (int i = 0; i < n; i++)
+            if (strstr(k[i].telefon, upit)) {
+                printf("%-5d %-20s %-20s %-30s %-15s\n",
+                    k[i].id, k[i].ime, k[i].prezime,
+                    k[i].email, k[i].telefon);
+                pron = 1;
+            }
+        break;
+    }
+    default:
+        printf("Nevazeci izbor.\n"); return;
+    }
+
+    if (!pron) printf("Nista pronadeno.\n");
+}
+
+/* ------------------------------------------------------------------ */
+/*  Izbornik (tocke 10, 11)                                           */
+/* ------------------------------------------------------------------ */
+
+void izbornikKupci(const char* datoteka) {
+    int    izbor;
+    KUPAC* k = NULL;
+    int    n = 0;
+
+    while (1) {
+        printf("\n--- UPRAVLJANJE KUPCIMA ---\n");
+        printf("  1. Dodaj novog kupca\n");
+        printf("  2. Ucitaj kupce iz datoteke\n");
+        printf("  3. Ispisi sve kupce\n");
+        printf("  4. Uredi kupca\n");
+        printf("  5. Obrisi kupca\n");
+        printf("  6. Pretrazi kupce\n");
+        printf("  7. Povratak\n");
+        printf("  8. Sortiraj kupce po prezimenu\n");
+        printf("Izbor: ");
+
+        if (!citajInt(&izbor)) {
+            printf("Unos prekinut. Povratak u glavni izbornik.\n");
+            if (k) { free(k); k = NULL; n = 0; }
+            return;
+        }
+
+        switch ((OpcijaKupci)izbor) {
+        case KUPAC_DODAJ:
+            dodajKupca(datoteka);
+            break;
+        case KUPAC_UCITAJ:
+            if (k) { free(k); k = NULL; }  /* tocka 18 */
+            k = ucitajKupce(datoteka, &n);
+            printf(k ? "Ucitano %d kupaca.\n"
+                     : "Datoteka prazna ili ne postoji.\n", n);
+            break;
+        case KUPAC_ISPISI:
+            ispisiKupce(k, n);
+            break;
+        case KUPAC_UREDI:
+            urediKupca(datoteka);
+            if (k) { free(k); k = NULL; }
+            k = ucitajKupce(datoteka, &n);
+            break;
+        case KUPAC_OBRISI:
+            obrisiKupca(datoteka);
+            if (k) { free(k); k = NULL; }
+            k = ucitajKupce(datoteka, &n);
+            break;
+        case KUPAC_PRETRAZI:
+            pretraziKupce(k, n);
+            break;
+        case KUPAC_SORTIRAJ:
+            sortirajKupce(k, n);
+            printf("Kupci sortirani po prezimenu.\n");
+            ispisiKupce(k, n);
+            break;
+        case KUPAC_POVRATAK:
+            if (k) { free(k); k = NULL; n = 0; }  /* tocka 18 */
+            return;
+        default:
+            printf("Nevazeci izbor.\n");
+        }
+    }
+}
+
+
+
+
+
+#ifndef KUPCI_H
+#define KUPCI_H
+
+/*  Struktura KUPAC (tocke 3, 4)*/
+typedef struct {
+    int  id;
+    char ime[50];
+    char prezime[50];
+    char email[80];
+    char telefon[20];
+    char adresa[100];
+} KUPAC;
+
+/*  Enum tipovi izbornika (tocka 11)*/
+typedef enum {
+    KUPAC_DODAJ = 1,
+    KUPAC_UCITAJ = 2,
+    KUPAC_ISPISI = 3,
+    KUPAC_UREDI = 4,
+    KUPAC_OBRISI = 5,
+    KUPAC_PRETRAZI = 6,
+    KUPAC_SORTIRAJ = 8,
+    KUPAC_POVRATAK = 7
+} OpcijaKupci;
+
+typedef enum {
+    KUPAC_PRETRAGA_ID = 1,
+    KUPAC_PRETRAGA_PREZIME = 2,
+    KUPAC_PRETRAGA_EMAIL = 3,
+    KUPAC_PRETRAGA_TELEFON = 4
+} OpcijaKupacPretraga;
+
+/*  Deklaracije funkcija*/
+void   izbornikKupci(const char* datoteka);
+void   dodajKupca(const char* datoteka);
+KUPAC* ucitajKupce(const char* datoteka, int* n);
+int    spremiKupce(const char* datoteka, KUPAC* k, int n);
+void   ispisiKupce(KUPAC* k, int n);
+void   urediKupca(const char* datoteka);
+void   obrisiKupca(const char* datoteka);
+void   pretraziKupce(KUPAC* k, int n);
+void   sortirajKupce(KUPAC* k, int n);
+KUPAC* nadjiKupcaID(KUPAC* k, int n, int trazeniID);
+
+#endif /* KUPCI_H */
+
+
+
+
+#define _CRT_SECURE_NO_WARNINGS
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include "Proizvodi.h"
+#include "Pomocnici.h"
+
+/* ------------------------------------------------------------------ */
+/*  Static pomocne funkcije (tocka 6)                                  */
+/* ------------------------------------------------------------------ */
+
+static int sljedeciID(PROIZVOD* p, int n) {
+    int maks = 0;
+    for (int i = 0; i < n; i++)
+        if (p[i].id > maks) maks = p[i].id;
+    return maks + 1;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Komparatori za qsort i bsearch (tocke 23, 24, 26)                 */
+/* ------------------------------------------------------------------ */
+
+/* Pokazivac na funkciju - sortiranje po cijeni */
+static int usporediCijenu(const void* a, const void* b) {
+    float razlika = ((const PROIZVOD*)a)->cijena -
+                    ((const PROIZVOD*)b)->cijena;
+    return (razlika > 0.0f) - (razlika < 0.0f);
+}
+
+/* Komparator za bsearch po ID-u */
+static int usporediProizvodID(const void* kljuc, const void* elem) {
+    int id = *(const int*)kljuc;
+    return id - ((const PROIZVOD*)elem)->id;
+}
+
+/* Komparator za sortiranje po ID-u (potrebno prije bsearch-a) */
+static int usporediProizvodIDSort(const void* a, const void* b) {
+    return ((const PROIZVOD*)a)->id - ((const PROIZVOD*)b)->id;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Rekurzivni binarni search po ID-u (tocka 25)                      */
+/*  NAPOMENA: niz mora biti sortiran po ID-u prije poziva!            */
+/* ------------------------------------------------------------------ */
+static int binSearchProizvodRek(PROIZVOD* p, int lijevo, int desno,
+                                 int trazeniID) {
+    if (lijevo > desno) return -1;
+    int sredina = lijevo + (desno - lijevo) / 2;
+    if (p[sredina].id == trazeniID) return sredina;
+    if (p[sredina].id < trazeniID)
+        return binSearchProizvodRek(p, sredina + 1, desno, trazeniID);
+    return binSearchProizvodRek(p, lijevo, sredina - 1, trazeniID);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Linearni search po ID-u                                           */
+/*  Koristi se kad niz nije garantirano sortiran po ID-u.             */
+/* ------------------------------------------------------------------ */
+static int linearSearchProizvodID(PROIZVOD* p, int n, int trazeniID) {
+    for (int i = 0; i < n; i++)
+        if (p[i].id == trazeniID) return i;
+    return -1;
+}
+
+/* ------------------------------------------------------------------ */
+/*  CRUD funkcije                                                      */
+/* ------------------------------------------------------------------ */
+
+PROIZVOD* ucitajProizvode(const char* datoteka, int* n) {
+    if (!datoteka || !n) return NULL;
+
+    FILE* fp = fopen(datoteka, "rb");
+    if (!fp) { *n = 0; return NULL; }
+
+    rewind(fp);   /* tocka 20 */
+
+    if (fread(n, sizeof(int), 1, fp) != 1 || *n <= 0) {
+        if (ferror(fp)) ispisiGresku("fread (count)");  /* tocka 22 */
+        fclose(fp); *n = 0; return NULL;
+    }
+
+    long pos = ftell(fp);   /* tocka 20 */
+    if (pos < 0) { ispisiGresku("ftell"); fclose(fp); *n = 0; return NULL; }
+
+    PROIZVOD* p = malloc((size_t)(*n) * sizeof(PROIZVOD));  /* tocka 17 */
+    if (!p) { ispisiGresku("malloc"); fclose(fp); *n = 0; return NULL; }
+
+    if ((int)fread(p, sizeof(PROIZVOD), (size_t)(*n), fp) != *n) {
+        if (ferror(fp)) ispisiGresku("fread (data)");
+        free(p); p = NULL; *n = 0; fclose(fp); return NULL;  /* tocka 18 */
+    }
+
+    fclose(fp);
+    return p;
+}
+
+int spremiProizvode(const char* datoteka, PROIZVOD* p, int n) {
+    if (!datoteka) return 0;
+    return atomicnoSpremi(datoteka, p, n, sizeof(PROIZVOD));  /* tocka 21 */
+}
+
+void ispisiProizvode(PROIZVOD* p, int n) {
+    if (!p || n <= 0) {   /* tocka 14 */
+        printf("Nema ucitanih proizvoda. Koristite opciju 'Ucitaj proizvode'.\n");
+        return;
+    }
+    printf("\n%-5s %-30s %-20s %12s\n", "ID", "Ime", "Kategorija", "Cijena");
+    printf("%-5s %-30s %-20s %12s\n",
+        "-----", "------------------------------",
+        "--------------------", "------------");
+    for (int i = 0; i < n; i++)
+        printf("%-5d %-30s %-20s %10.2f EUR\n",
+            p[i].id, p[i].ime, p[i].kategorija, p[i].cijena);
+    printf("Ukupno: %d proizvod(a)\n", n);
+}
+
+void dodajProizvod(const char* datoteka) {
+    if (!datoteka) return;
+
+    int       n = 0;
+    PROIZVOD* p = ucitajProizvode(datoteka, &n);
+
+    PROIZVOD novi;
+    memset(&novi, 0, sizeof(PROIZVOD));
+    novi.id = sljedeciID(p, n);
+
+    printf("Ime proizvoda   : "); citajLiniju(novi.ime, sizeof(novi.ime));
+    if (novi.ime[0] == '\0') {
+        printf("Ime ne smije biti prazno.\n");
+        if (p) { free(p); p = NULL; }
+        return;
+    }
+
+    printf("Kategorija      : "); citajLiniju(novi.kategorija, sizeof(novi.kategorija));
+    if (novi.kategorija[0] == '\0') {
+        printf("Kategorija ne smije biti prazna.\n");
+        if (p) { free(p); p = NULL; }
+        return;
+    }
+
+    printf("Cijena (EUR)    : ");
+    while (1) {
+        if (!citajFloat(&novi.cijena)) {
+            printf("Unos prekinut.\n");
+            if (p) { free(p); p = NULL; }
+            return;
+        }
+        if (novi.cijena >= 0.0f) break;
+        printf("Cijena mora biti pozitivna: ");
+    }
+
+    PROIZVOD* tmp = realloc(p, (size_t)(n + 1) * sizeof(PROIZVOD));  /* tocka 17 */
+    if (!tmp) {
+        ispisiGresku("realloc");
+        free(p); p = NULL;  /* tocka 18 */
+        return;
+    }
+    p = tmp;
+    p[n++] = novi;
+
+    if (spremiProizvode(datoteka, p, n))
+        printf("Proizvod uspjesno dodan! (ID: %d)\n", novi.id);
+    else
+        printf("Greska pri spremanju datoteke.\n");
+
+    free(p); p = NULL;
+}
+
+void urediProizvod(const char* datoteka) {
+    if (!datoteka) return;
+
+    int       n = 0;
+    PROIZVOD* p = ucitajProizvode(datoteka, &n);
+    if (!p) { printf("Nema podataka za uredivanje.\n"); return; }
+
+    ispisiProizvode(p, n);
+
+    int id;
+    printf("\nID proizvoda za uredivanje: ");
+    if (!citajInt(&id)) {
+        printf("Unos prekinut.\n");
+        free(p); p = NULL; return;
+    }
+
+    /*
+     * Koristimo linearni search kako bismo sigurno pronasli zapis
+     * bez obzira na redoslijed elemenata u nizu.
+     */
+    int idx = linearSearchProizvodID(p, n, id);
+    if (idx == -1) {
+        printf("Proizvod s ID-om %d nije pronaden.\n", id);
+        free(p); p = NULL; return;
+    }
+
+    char buf[100];
+
+    printf("Ime [%s]: ", p[idx].ime);
+    citajLiniju(buf, sizeof(buf));
+    if (buf[0] != '\0') sigurnoKopiraj(p[idx].ime, buf, sizeof(p[idx].ime));
+
+    printf("Kategorija [%s]: ", p[idx].kategorija);
+    citajLiniju(buf, sizeof(buf));
+    if (buf[0] != '\0') sigurnoKopiraj(p[idx].kategorija, buf, sizeof(p[idx].kategorija));
+
+    printf("Cijena [%.2f] (-1 za zadrzati): ", p[idx].cijena);
+    float c;
+    if (!citajFloat(&c)) { printf("Unos prekinut.\n"); free(p); p = NULL; return; }
+    if (c >= 0.0f) p[idx].cijena = c;
+
+    if (spremiProizvode(datoteka, p, n))
+        printf("Proizvod ID %d uspjesno ureden.\n", id);
+    else
+        printf("Greska pri spremanju.\n");
+
+    free(p); p = NULL;
+}
+
+void obrisiProizvod(const char* datoteka) {
+    if (!datoteka) return;
+
+    int       n = 0;
+    PROIZVOD* p = ucitajProizvode(datoteka, &n);
+    if (!p) { printf("Nema podataka za brisanje.\n"); return; }
+
+    ispisiProizvode(p, n);
+
+    int id;
+    printf("\nID proizvoda za brisanje: ");
+    if (!citajInt(&id)) {
+        printf("Unos prekinut.\n");
+        free(p); p = NULL; return;
+    }
+
+    int idx = linearSearchProizvodID(p, n, id);
+    if (idx == -1) {
+        printf("Proizvod s ID-om %d nije pronaden.\n", id);
+        free(p); p = NULL; return;
+    }
+
+    char potvrda[10];
+    printf("Brisanje proizvoda '%s' (%.2f EUR). Potvrdite (da/ne): ",
+        p[idx].ime, p[idx].cijena);
+    citajLiniju(potvrda, sizeof(potvrda));
+
+    if (strcmp(potvrda, "da") != 0) {
+        printf("Brisanje odustano.\n");
+        free(p); p = NULL; return;
+    }
+
+    for (int i = idx; i < n - 1; i++)
+        p[i] = p[i + 1];
+    n--;
+    memset(&p[n], 0, sizeof(PROIZVOD));  /* tocka 18 - anuliranje */
+
+    if (spremiProizvode(datoteka, p, n))
+        printf("Proizvod uspjesno obrisan.\n");
+    else
+        printf("Greska pri spremanju.\n");
+
+    free(p); p = NULL;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Sortiranje i pretraga (tocke 23, 24, 26)                          */
+/* ------------------------------------------------------------------ */
+
+void sortirajProizvode(PROIZVOD* p, int n) {
+    if (!p || n <= 1) return;
+    /* tocka 23 - qsort, tocka 26 - pokazivac na funkciju usporediCijenu */
+    qsort(p, (size_t)n, sizeof(PROIZVOD), usporediCijenu);
+}
+
+void pretraziProizvode(PROIZVOD* p, int n) {
+    if (!p || n <= 0) {
+        printf("Nema ucitanih podataka. Koristite opciju 'Ucitaj proizvode'.\n");
+        return;
+    }
+
+    int opcija, pron = 0;
+    printf("\nPretraga po:\n");
+    printf("  1. ID-u\n  2. Imenu\n  3. Kategoriji\n  4. Rasponu cijena\n");
+    printf("Izbor: ");
+    if (!citajInt(&opcija)) { printf("Unos prekinut.\n"); return; }
+
+    printf("\n%-5s %-30s %-20s %12s\n", "ID", "Ime", "Kategorija", "Cijena");
+    printf("%-5s %-30s %-20s %12s\n",
+        "-----", "------------------------------",
+        "--------------------", "------------");
+
+    switch ((OpcijaProizvodPretraga)opcija) {
+    case PROIZVOD_PRETRAGA_ID: {
+        int id;
+        printf("ID: ");
+        if (!citajInt(&id)) { printf("Unos prekinut.\n"); return; }
+        /*
+         * Koristimo linearni search kako ne bismo mutirali redoslijed niza.
+         * bsearch (tocka 24) bi zahtijevao prethodni qsort po ID-u.
+         */
+        int idx = linearSearchProizvodID(p, n, id);
+        if (idx >= 0) {
+            printf("%-5d %-30s %-20s %10.2f EUR\n",
+                p[idx].id, p[idx].ime, p[idx].kategorija, p[idx].cijena);
+            pron = 1;
+        }
+        break;
+    }
+    case PROIZVOD_PRETRAGA_IME: {
+        char upit[50];
+        printf("Dio imena: "); citajLiniju(upit, sizeof(upit));
+        for (int i = 0; i < n; i++)
+            if (strstr(p[i].ime, upit)) {
+                printf("%-5d %-30s %-20s %10.2f EUR\n",
+                    p[i].id, p[i].ime, p[i].kategorija, p[i].cijena);
+                pron = 1;
+            }
+        break;
+    }
+    case PROIZVOD_PRETRAGA_KATEGORIJA: {
+        char upit[30];
+        printf("Kategorija: "); citajLiniju(upit, sizeof(upit));
+        for (int i = 0; i < n; i++)
+            if (strstr(p[i].kategorija, upit)) {
+                printf("%-5d %-30s %-20s %10.2f EUR\n",
+                    p[i].id, p[i].ime, p[i].kategorija, p[i].cijena);
+                pron = 1;
+            }
+        break;
+    }
+    case PROIZVOD_PRETRAGA_CIJENA: {
+        float mn, mx;
+        printf("Min cijena: ");
+        if (!citajFloat(&mn)) { printf("Unos prekinut.\n"); return; }
+        printf("Max cijena: ");
+        if (!citajFloat(&mx)) { printf("Unos prekinut.\n"); return; }
+        for (int i = 0; i < n; i++)
+            if (p[i].cijena >= mn && p[i].cijena <= mx) {
+                printf("%-5d %-30s %-20s %10.2f EUR\n",
+                    p[i].id, p[i].ime, p[i].kategorija, p[i].cijena);
+                pron = 1;
+            }
+        break;
+    }
+    default:
+        printf("Nevazeci izbor.\n"); return;
+    }
+
+    if (!pron) printf("Nista pronadeno.\n");
+}
+
+/* ------------------------------------------------------------------ */
+/*  Izbornik (tocke 10, 11)                                           */
+/* ------------------------------------------------------------------ */
+
+void izbornikProizvodi(const char* datoteka) {
+    int       izbor;
+    PROIZVOD* p = NULL;
+    int       n = 0;
+
+    while (1) {
+        printf("\n--- UPRAVLJANJE PROIZVODIMA ---\n");
+        printf("  1. Dodaj novi proizvod\n");
+        printf("  2. Ucitaj proizvode iz datoteke\n");
+        printf("  3. Ispisi sve proizvode\n");
+        printf("  4. Uredi proizvod\n");
+        printf("  5. Obrisi proizvod\n");
+        printf("  6. Pretrazi proizvode\n");
+        printf("  7. Povratak\n");
+        printf("  8. Sortiraj proizvode po cijeni\n");
+        printf("Izbor: ");
+
+        if (!citajInt(&izbor)) {
+            printf("Unos prekinut. Povratak u glavni izbornik.\n");
+            if (p) { free(p); p = NULL; n = 0; }
+            return;
+        }
+
+        switch ((OpcijaProizvodi)izbor) {
+        case PROIZVOD_DODAJ:
+            dodajProizvod(datoteka);
+            break;
+        case PROIZVOD_UCITAJ:
+            if (p) { free(p); p = NULL; }
+            p = ucitajProizvode(datoteka, &n);
+            printf(p ? "Ucitano %d proizvoda.\n"
+                     : "Datoteka prazna ili ne postoji.\n", n);
+            break;
+        case PROIZVOD_ISPISI:
+            ispisiProizvode(p, n);
+            break;
+        case PROIZVOD_UREDI:
+            urediProizvod(datoteka);
+            if (p) { free(p); p = NULL; }
+            p = ucitajProizvode(datoteka, &n);
+            break;
+        case PROIZVOD_OBRISI:
+            obrisiProizvod(datoteka);
+            if (p) { free(p); p = NULL; }
+            p = ucitajProizvode(datoteka, &n);
+            break;
+        case PROIZVOD_PRETRAZI:
+            pretraziProizvode(p, n);
+            break;
+        case PROIZVOD_SORTIRAJ:
+            sortirajProizvode(p, n);
+            printf("Proizvodi sortirani po cijeni.\n");
+            ispisiProizvode(p, n);
+            break;
+        case PROIZVOD_POVRATAK:
+            if (p) { free(p); p = NULL; n = 0; }
+            return;
+        default:
+            printf("Nevazeci izbor.\n");
+        }
+    }
+}
+
+
+
+
+#ifndef PROIZVODI_H
+#define PROIZVODI_H
+
+/*  Struktura PROIZVOD (tocke 3, 4)*/
+
+typedef struct {
+    int   id;
+    char  ime[50];
+    char  kategorija[30];
+    float cijena;
+} PROIZVOD;
+
+/*  Enum tipovi izbornika (tocka 11)*/
+
+typedef enum {
+    PROIZVOD_DODAJ = 1,
+    PROIZVOD_UCITAJ = 2,
+    PROIZVOD_ISPISI = 3,
+    PROIZVOD_UREDI = 4,
+    PROIZVOD_OBRISI = 5,
+    PROIZVOD_PRETRAZI = 6,
+    PROIZVOD_POVRATAK = 7,
+    PROIZVOD_SORTIRAJ = 8
+} OpcijaProizvodi;
+
+typedef enum {
+    PROIZVOD_PRETRAGA_ID = 1,
+    PROIZVOD_PRETRAGA_IME = 2,
+    PROIZVOD_PRETRAGA_KATEGORIJA = 3,
+    PROIZVOD_PRETRAGA_CIJENA = 4
+} OpcijaProizvodPretraga;
+
+/*  Deklaracije funkcija*/
+
+void      izbornikProizvodi(const char* datoteka);
+void      dodajProizvod(const char* datoteka);
+PROIZVOD* ucitajProizvode(const char* datoteka, int* n);
+int       spremiProizvode(const char* datoteka, PROIZVOD* p, int n);
+void      ispisiProizvode(PROIZVOD* p, int n);
+void      urediProizvod(const char* datoteka);
+void      obrisiProizvod(const char* datoteka);
+void      pretraziProizvode(PROIZVOD* p, int n);
+void      sortirajProizvode(PROIZVOD* p, int n);
+
+#endif /* PROIZVODI_H */
+
+
+
+
+
+#define _CRT_SECURE_NO_WARNINGS
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <errno.h>
+#include "Narudzbe.h"
+#include "Kupci.h"
+#include "Proizvodi.h"
+#include "Zalihe.h"
+#include "Pomocnici.h"
+
+/* ------------------------------------------------------------------ */
+/*  Static pomocne funkcije (tocka 6)                                  */
+/* ------------------------------------------------------------------ */
+
+static int sljedeciID(NARUDZBA* nar, int n) {
+    int maks = 0;
+    for (int i = 0; i < n; i++)
+        if (nar[i].id > maks) maks = nar[i].id;
+    return maks + 1;
+}
+
+static void danasnjiDatum(char* buf, int vel) {
+    if (!buf || vel <= 0) return;
+    time_t     t = time(NULL);
+    struct tm* tmInfo = localtime(&t);
+    strftime(buf, (size_t)vel, "%d.%m.%Y", tmInfo);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Komparatori za qsort i bsearch (tocke 23, 24, 26)                 */
+/* ------------------------------------------------------------------ */
+
+/* Pokazivac na funkciju - sortiranje po datumu (leksikografski) */
+static int usporediDatum(const void* a, const void* b) {
+    return strcmp(((const NARUDZBA*)a)->datum,
+                  ((const NARUDZBA*)b)->datum);
+}
+
+/* Komparator za bsearch po ID-u */
+static int usporediNarudzbaID(const void* kljuc, const void* elem) {
+    int id = *(const int*)kljuc;
+    return id - ((const NARUDZBA*)elem)->id;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Rekurzivni binarni search po ID-u (tocka 25)                      */
+/*  NAPOMENA: niz mora biti sortiran po ID-u prije poziva!            */
+/* ------------------------------------------------------------------ */
+static int binSearchNarudzbaRek(NARUDZBA* nar, int lijevo, int desno,
+                                  int trazeniID) {
+    if (lijevo > desno) return -1;
+    int sredina = lijevo + (desno - lijevo) / 2;
+    if (nar[sredina].id == trazeniID) return sredina;
+    if (nar[sredina].id < trazeniID)
+        return binSearchNarudzbaRek(nar, sredina + 1, desno, trazeniID);
+    return binSearchNarudzbaRek(nar, lijevo, sredina - 1, trazeniID);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Linearni search po ID-u                                           */
+/*  Koristi se kad niz nije garantirano sortiran po ID-u.             */
+/* ------------------------------------------------------------------ */
+static int linearSearchNarudzbaID(NARUDZBA* nar, int n, int trazeniID) {
+    for (int i = 0; i < n; i++)
+        if (nar[i].id == trazeniID) return i;
+    return -1;
+}
+
+/* ------------------------------------------------------------------ */
+/*  CRUD funkcije                                                      */
+/* ------------------------------------------------------------------ */
+
+NARUDZBA* ucitajNarudzbe(const char* datoteka, int* n) {
+    if (!datoteka || !n) return NULL;
+
+    FILE* fp = fopen(datoteka, "rb");
+    if (!fp) { *n = 0; return NULL; }
+
+    rewind(fp);   /* tocka 20 */
+
+    if (fread(n, sizeof(int), 1, fp) != 1 || *n <= 0) {
+        if (ferror(fp)) ispisiGresku("fread (count)");  /* tocka 22 */
+        fclose(fp); *n = 0; return NULL;
+    }
+
+    long pos = ftell(fp);   /* tocka 20 */
+    if (pos < 0) { ispisiGresku("ftell"); fclose(fp); *n = 0; return NULL; }
+
+    NARUDZBA* nar = malloc((size_t)(*n) * sizeof(NARUDZBA));  /* tocka 17 */
+    if (!nar) { ispisiGresku("malloc"); fclose(fp); *n = 0; return NULL; }
+
+    if ((int)fread(nar, sizeof(NARUDZBA), (size_t)(*n), fp) != *n) {
+        if (ferror(fp)) ispisiGresku("fread (data)");
+        free(nar); nar = NULL; *n = 0; fclose(fp); return NULL;
+    }
+
+    fclose(fp);
+    return nar;
+}
+
+int spremiNarudzbe(const char* datoteka, NARUDZBA* nar, int n) {
+    if (!datoteka) return 0;
+    return atomicnoSpremi(datoteka, nar, n, sizeof(NARUDZBA));  /* tocka 21 */
+}
+
+void ispisiNarudzbe(NARUDZBA* nar, int n) {
+    if (!nar || n <= 0) {   /* tocka 14 */
+        printf("Nema ucitanih narudzbi. Koristite opciju 'Ucitaj narudzbe'.\n");
+        return;
+    }
+    printf("\n%-5s %-8s %-10s %-8s %12s %-12s %-14s\n",
+        "ID", "KupacID", "ProizvodID", "Kolicina",
+        "Ukupno(EUR)", "Datum", "Status");
+    printf("%-5s %-8s %-10s %-8s %12s %-12s %-14s\n",
+        "-----", "--------", "----------", "--------",
+        "------------", "------------", "--------------");
+    for (int i = 0; i < n; i++)
+        printf("%-5d %-8d %-10d %-8d %10.2f EUR %-12s %-14s\n",
+            nar[i].id, nar[i].kupac_id, nar[i].proizvod_id,
+            nar[i].kolicina, nar[i].ukupna_cijena,
+            nar[i].datum, nar[i].status);
+    printf("Ukupno: %d narudzb(a)\n", n);
+}
+
+void dodajNarudzbu(const char* dat_nar,
+                    const char* dat_kupci,
+                    const char* dat_proizvodi,
+                    const char* dat_zalihe) {
+    if (!dat_nar || !dat_kupci || !dat_proizvodi) return;
+
+    int    nk = 0;
+    KUPAC* kupci = ucitajKupce(dat_kupci, &nk);
+    if (!kupci || nk == 0) {
+        printf("Nema kupaca u sustavu. Prvo dodajte kupca.\n");
+        if (kupci) { free(kupci); kupci = NULL; }
+        return;
+    }
+    printf("\n--- Dostupni kupci ---\n");
+    ispisiKupce(kupci, nk);
+
+    int       np = 0;
+    PROIZVOD* proizvodi = ucitajProizvode(dat_proizvodi, &np);
+    if (!proizvodi || np == 0) {
+        printf("Nema proizvoda u sustavu. Prvo dodajte proizvod.\n");
+        free(kupci); kupci = NULL;
+        if (proizvodi) { free(proizvodi); proizvodi = NULL; }
+        return;
+    }
+    printf("\n--- Dostupni proizvodi ---\n");
+    ispisiProizvode(proizvodi, np);
+
+    int       n = 0;
+    NARUDZBA* nar = ucitajNarudzbe(dat_nar, &n);
+
+    NARUDZBA novi;
+    memset(&novi, 0, sizeof(NARUDZBA));
+    novi.id = sljedeciID(nar, n);
+
+    /* Provjera kupca */
+    int kupacID;
+    printf("\nID kupca: ");
+    if (!citajInt(&kupacID)) {
+        printf("Unos prekinut.\n");
+        free(kupci); kupci = NULL;
+        free(proizvodi); proizvodi = NULL;
+        if (nar) { free(nar); nar = NULL; }
+        return;
+    }
+
+    int kidx = -1;
+    for (int i = 0; i < nk; i++)
+        if (kupci[i].id == kupacID) { kidx = i; break; }
+    if (kidx == -1) {
+        printf("Kupac s ID-om %d ne postoji.\n", kupacID);
+        free(kupci); kupci = NULL;
+        free(proizvodi); proizvodi = NULL;
+        if (nar) { free(nar); nar = NULL; }
+        return;
+    }
+    novi.kupac_id = kupacID;
+
+    /* Provjera proizvoda */
+    int proizvID;
+    printf("ID proizvoda: ");
+    if (!citajInt(&proizvID)) {
+        printf("Unos prekinut.\n");
+        free(kupci); kupci = NULL;
+        free(proizvodi); proizvodi = NULL;
+        if (nar) { free(nar); nar = NULL; }
+        return;
+    }
+
+    int pidx = -1;
+    for (int i = 0; i < np; i++)
+        if (proizvodi[i].id == proizvID) { pidx = i; break; }
+    if (pidx == -1) {
+        printf("Proizvod s ID-om %d ne postoji.\n", proizvID);
+        free(kupci); kupci = NULL;
+        free(proizvodi); proizvodi = NULL;
+        if (nar) { free(nar); nar = NULL; }
+        return;
+    }
+    novi.proizvod_id = proizvID;
+
+    /* Kolicina */
+    printf("Kolicina: ");
+    if (!citajInt(&novi.kolicina)) {
+        printf("Unos prekinut.\n");
+        free(kupci); kupci = NULL;
+        free(proizvodi); proizvodi = NULL;
+        if (nar) { free(nar); nar = NULL; }
+        return;
+    }
+    if (novi.kolicina <= 0) {
+        printf("Kolicina mora biti pozitivna.\n");
+        free(kupci); kupci = NULL;
+        free(proizvodi); proizvodi = NULL;
+        if (nar) { free(nar); nar = NULL; }
+        return;
+    }
+
+    novi.ukupna_cijena = proizvodi[pidx].cijena * (float)novi.kolicina;
+    danasnjiDatum(novi.datum, sizeof(novi.datum));
+    sigurnoKopiraj(novi.status, "Na cekanju", sizeof(novi.status));
+
+    /* Pregled i potvrda */
+    printf("\n--- Pregled narudzbe ---\n");
+    printf("Kupac     : %s %s\n", kupci[kidx].ime, kupci[kidx].prezime);
+    printf("Proizvod  : %s\n", proizvodi[pidx].ime);
+    printf("Kolicina  : %d kom\n", novi.kolicina);
+    printf("Cijena/kom: %.2f EUR\n", proizvodi[pidx].cijena);
+    printf("UKUPNO    : %.2f EUR\n", novi.ukupna_cijena);
+    printf("Datum     : %s\n", novi.datum);
+    printf("Status    : %s\n", novi.status);
+
+    char potvrda[10];
+    printf("Pohrani narudzbu? (da/ne): ");
+    citajLiniju(potvrda, sizeof(potvrda));
+
+    if (strcmp(potvrda, "da") != 0) {
+        printf("Narudzba odustana.\n");
+        free(kupci); kupci = NULL;
+        free(proizvodi); proizvodi = NULL;
+        if (nar) { free(nar); nar = NULL; }
+        return;
+    }
+
+    NARUDZBA* tmp = realloc(nar, (size_t)(n + 1) * sizeof(NARUDZBA));
+    if (!tmp) {
+        ispisiGresku("realloc");
+        free(kupci); kupci = NULL;
+        free(proizvodi); proizvodi = NULL;
+        if (nar) { free(nar); nar = NULL; }
+        return;
+    }
+    nar = tmp;
+    nar[n++] = novi;
+
+    if (spremiNarudzbe(dat_nar, nar, n)) {
+        printf("Narudzba uspjesno pohranjena! (ID: %d, Ukupno: %.2f EUR)\n",
+               novi.id, novi.ukupna_cijena);
+
+        /* Azuriranje zaliha - smanji kolicinu za narudjeni proizvod */
+        if (dat_zalihe) {
+            azurirajZalihuNakonNarudzbe(dat_zalihe,
+                                         novi.proizvod_id,
+                                         novi.kolicina);
+        }
+    } else {
+        printf("Greska pri spremanju.\n");
+    }
+
+    free(kupci);    kupci = NULL;
+    free(proizvodi); proizvodi = NULL;
+    free(nar);      nar = NULL;
+}
+
+void urediNarudzbu(const char* datoteka) {
+    if (!datoteka) return;
+
+    int       n = 0;
+    NARUDZBA* nar = ucitajNarudzbe(datoteka, &n);
+    if (!nar) { printf("Nema podataka za uredivanje.\n"); return; }
+
+    ispisiNarudzbe(nar, n);
+
+    int id;
+    printf("\nID narudzbe za uredivanje: ");
+    if (!citajInt(&id)) {
+        printf("Unos prekinut.\n");
+        free(nar); nar = NULL; return;
+    }
+
+    /*
+     * Koristimo linearni search kako bismo sigurno pronasli zapis
+     * bez obzira na redoslijed elemenata u nizu.
+     */
+    int idx = linearSearchNarudzbaID(nar, n, id);
+    if (idx == -1) {
+        printf("Narudzba s ID-om %d nije pronadena.\n", id);
+        free(nar); nar = NULL; return;
+    }
+
+    printf("\nTrenutni status [%s]\n", nar[idx].status);
+    printf("  1. Na cekanju\n  2. Isporuceno\n  3. Otkazano\n");
+    printf("  0. Zadrzati trenutni\n");
+    printf("Izbor: ");
+    int s;
+    if (!citajInt(&s)) { printf("Unos prekinut.\n"); free(nar); nar = NULL; return; }
+
+    switch ((OpcijaStatus)s) {
+    case STATUS_NA_CEKANJU:
+        sigurnoKopiraj(nar[idx].status, "Na cekanju", sizeof(nar[idx].status));
+        break;
+    case STATUS_ISPORUCENO:
+        sigurnoKopiraj(nar[idx].status, "Isporuceno", sizeof(nar[idx].status));
+        break;
+    case STATUS_OTKAZANO:
+        sigurnoKopiraj(nar[idx].status, "Otkazano", sizeof(nar[idx].status));
+        break;
+    case STATUS_ZADRZATI:
+    default:
+        break;
+    }
+
+    if (spremiNarudzbe(datoteka, nar, n))
+        printf("Narudzba ID %d uspjesno uredena.\n", id);
+    else
+        printf("Greska pri spremanju.\n");
+
+    free(nar); nar = NULL;
+}
+
+void obrisiNarudzbu(const char* datoteka) {
+    if (!datoteka) return;
+
+    int       n = 0;
+    NARUDZBA* nar = ucitajNarudzbe(datoteka, &n);
+    if (!nar) { printf("Nema podataka za brisanje.\n"); return; }
+
+    ispisiNarudzbe(nar, n);
+
+    int id;
+    printf("\nID narudzbe za brisanje: ");
+    if (!citajInt(&id)) {
+        printf("Unos prekinut.\n");
+        free(nar); nar = NULL; return;
+    }
+
+    int idx = linearSearchNarudzbaID(nar, n, id);
+    if (idx == -1) {
+        printf("Narudzba s ID-om %d nije pronadena.\n", id);
+        free(nar); nar = NULL; return;
+    }
+
+    char potvrda[10];
+    printf("Brisanje narudzbe #%d (%.2f EUR). Potvrdite (da/ne): ",
+        nar[idx].id, nar[idx].ukupna_cijena);
+    citajLiniju(potvrda, sizeof(potvrda));
+
+    if (strcmp(potvrda, "da") != 0) {
+        printf("Brisanje odustano.\n");
+        free(nar); nar = NULL; return;
+    }
+
+    for (int i = idx; i < n - 1; i++)
+        nar[i] = nar[i + 1];
+    n--;
+    memset(&nar[n], 0, sizeof(NARUDZBA));  /* tocka 18 */
+
+    if (spremiNarudzbe(datoteka, nar, n))
+        printf("Narudzba uspjesno obrisana.\n");
+    else
+        printf("Greska pri spremanju.\n");
+
+    free(nar); nar = NULL;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Sortiranje i pretraga (tocke 23, 24, 26)                          */
+/* ------------------------------------------------------------------ */
+
+void sortirajNarudzbe(NARUDZBA* nar, int n) {
+    if (!nar || n <= 1) return;
+    /* tocka 23 - qsort, tocka 26 - pokazivac na funkciju usporediDatum */
+    qsort(nar, (size_t)n, sizeof(NARUDZBA), usporediDatum);
+}
+
+void pretraziNarudzbe(NARUDZBA* nar, int n) {
+    if (!nar || n <= 0) {
+        printf("Nema ucitanih podataka. Koristite opciju 'Ucitaj narudzbe'.\n");
+        return;
+    }
+
+    int opcija, pron = 0;
+    printf("\nPretraga po:\n");
+    printf("  1. ID narudzbe\n  2. ID kupca\n"
+           "  3. ID proizvoda\n  4. Statusu\n");
+    printf("Izbor: ");
+    if (!citajInt(&opcija)) { printf("Unos prekinut.\n"); return; }
+
+    printf("\n%-5s %-8s %-10s %-8s %12s %-12s %-14s\n",
+        "ID", "KupacID", "ProizvodID", "Kolicina",
+        "Ukupno(EUR)", "Datum", "Status");
+    printf("%-5s %-8s %-10s %-8s %12s %-12s %-14s\n",
+        "-----", "--------", "----------", "--------",
+        "------------", "------------", "--------------");
+
+    switch ((OpcijaNarudzbaPretraga)opcija) {
+    case NARUDZBA_PRETRAGA_ID: {
+        int id;
+        printf("ID narudzbe: ");
+        if (!citajInt(&id)) { printf("Unos prekinut.\n"); return; }
+        int idx = linearSearchNarudzbaID(nar, n, id);
+        if (idx >= 0) {
+            printf("%-5d %-8d %-10d %-8d %10.2f EUR %-12s %-14s\n",
+                nar[idx].id, nar[idx].kupac_id, nar[idx].proizvod_id,
+                nar[idx].kolicina, nar[idx].ukupna_cijena,
+                nar[idx].datum, nar[idx].status);
+            pron = 1;
+        }
+        break;
+    }
+    case NARUDZBA_PRETRAGA_KUPAC_ID: {
+        int id;
+        printf("ID kupca: ");
+        if (!citajInt(&id)) { printf("Unos prekinut.\n"); return; }
+        for (int i = 0; i < n; i++)
+            if (nar[i].kupac_id == id) {
+                printf("%-5d %-8d %-10d %-8d %10.2f EUR %-12s %-14s\n",
+                    nar[i].id, nar[i].kupac_id, nar[i].proizvod_id,
+                    nar[i].kolicina, nar[i].ukupna_cijena,
+                    nar[i].datum, nar[i].status);
+                pron = 1;
+            }
+        break;
+    }
+    case NARUDZBA_PRETRAGA_PROIZVOD_ID: {
+        int id;
+        printf("ID proizvoda: ");
+        if (!citajInt(&id)) { printf("Unos prekinut.\n"); return; }
+        for (int i = 0; i < n; i++)
+            if (nar[i].proizvod_id == id) {
+                printf("%-5d %-8d %-10d %-8d %10.2f EUR %-12s %-14s\n",
+                    nar[i].id, nar[i].kupac_id, nar[i].proizvod_id,
+                    nar[i].kolicina, nar[i].ukupna_cijena,
+                    nar[i].datum, nar[i].status);
+                pron = 1;
+            }
+        break;
+    }
+    case NARUDZBA_PRETRAGA_STATUS: {
+        char upit[20];
+        printf("Status: "); citajLiniju(upit, sizeof(upit));
+        for (int i = 0; i < n; i++)
+            if (strstr(nar[i].status, upit)) {
+                printf("%-5d %-8d %-10d %-8d %10.2f EUR %-12s %-14s\n",
+                    nar[i].id, nar[i].kupac_id, nar[i].proizvod_id,
+                    nar[i].kolicina, nar[i].ukupna_cijena,
+                    nar[i].datum, nar[i].status);
+                pron = 1;
+            }
+        break;
+    }
+    default:
+        printf("Nevazeci izbor.\n"); return;
+    }
+
+    if (!pron) printf("Nista pronadeno.\n");
+}
+
+/* ------------------------------------------------------------------ */
+/*  Izbornik (tocke 10, 11)                                           */
+/* ------------------------------------------------------------------ */
+
+void izbornikNarudzbe(const char* dat_nar,
+                       const char* dat_kupci,
+                       const char* dat_proizvodi,
+                       const char* dat_zalihe) {
+    int       izbor;
+    NARUDZBA* nar = NULL;
+    int       n = 0;
+
+    while (1) {
+        printf("\n--- UPRAVLJANJE NARUDZBAMA ---\n");
+        printf("  1. Dodaj novu narudzbu\n");
+        printf("  2. Ucitaj narudzbe iz datoteke\n");
+        printf("  3. Ispisi sve narudzbe\n");
+        printf("  4. Uredi status narudzbe\n");
+        printf("  5. Obrisi narudzbu\n");
+        printf("  6. Pretrazi narudzbe\n");
+        printf("  7. Povratak\n");
+        printf("  8. Sortiraj narudzbe po datumu\n");
+        printf("Izbor: ");
+
+        if (!citajInt(&izbor)) {
+            printf("Unos prekinut. Povratak u glavni izbornik.\n");
+            if (nar) { free(nar); nar = NULL; n = 0; }
+            return;
+        }
+
+        switch ((OpcijaNarudzbe)izbor) {
+        case NARUDZBA_DODAJ:
+            dodajNarudzbu(dat_nar, dat_kupci, dat_proizvodi, dat_zalihe);
+            break;
+        case NARUDZBA_UCITAJ:
+            if (nar) { free(nar); nar = NULL; }
+            nar = ucitajNarudzbe(dat_nar, &n);
+            printf(nar ? "Ucitano %d narudzbi.\n"
+                       : "Datoteka prazna ili ne postoji.\n", n);
+            break;
+        case NARUDZBA_ISPISI:
+            ispisiNarudzbe(nar, n);
+            break;
+        case NARUDZBA_UREDI:
+            urediNarudzbu(dat_nar);
+            if (nar) { free(nar); nar = NULL; }
+            nar = ucitajNarudzbe(dat_nar, &n);
+            break;
+        case NARUDZBA_OBRISI:
+            obrisiNarudzbu(dat_nar);
+            if (nar) { free(nar); nar = NULL; }
+            nar = ucitajNarudzbe(dat_nar, &n);
+            break;
+        case NARUDZBA_PRETRAZI:
+            pretraziNarudzbe(nar, n);
+            break;
+        case NARUDZBA_SORTIRAJ:
+            sortirajNarudzbe(nar, n);
+            printf("Narudzbe sortirane po datumu.\n");
+            ispisiNarudzbe(nar, n);
+            break;
+        case NARUDZBA_POVRATAK:
+            if (nar) { free(nar); nar = NULL; n = 0; }
+            return;
+        default:
+            printf("Nevazeci izbor.\n");
+        }
+    }
+}
+
+
+
+
+#ifndef NARUDZBE_H
+#define NARUDZBE_H
+
+/*  Struktura NARUDZBA (tocke 3, 4)*/
+
+typedef struct {
+    int   id;
+    int   kupac_id;
+    int   proizvod_id;
+    int   kolicina;
+    float ukupna_cijena;
+    char  datum[20];
+    char  status[20];   /* Na cekanju | Isporuceno | Otkazano */
+} NARUDZBA;
+
+/*  Enum tipovi izbornika (tocka 11)*/
+
+typedef enum {
+    NARUDZBA_DODAJ = 1,
+    NARUDZBA_UCITAJ = 2,
+    NARUDZBA_ISPISI = 3,
+    NARUDZBA_UREDI = 4,
+    NARUDZBA_OBRISI = 5,
+    NARUDZBA_PRETRAZI = 6,
+    NARUDZBA_POVRATAK = 7,
+    NARUDZBA_SORTIRAJ = 8
+} OpcijaNarudzbe;
+
+typedef enum {
+    NARUDZBA_PRETRAGA_ID = 1,
+    NARUDZBA_PRETRAGA_KUPAC_ID = 2,
+    NARUDZBA_PRETRAGA_PROIZVOD_ID = 3,
+    NARUDZBA_PRETRAGA_STATUS = 4
+} OpcijaNarudzbaPretraga;
+
+typedef enum {
+    STATUS_NA_CEKANJU = 1,
+    STATUS_ISPORUCENO = 2,
+    STATUS_OTKAZANO = 3,
+    STATUS_ZADRZATI = 0
+} OpcijaStatus;
+
+/*  Deklaracije funkcija */
+
+void      izbornikNarudzbe(const char* dat_nar,
+                            const char* dat_kupci,
+                            const char* dat_proizvodi,
+                            const char* dat_zalihe);
+
+void      dodajNarudzbu(const char* dat_nar,
+                         const char* dat_kupci,
+                         const char* dat_proizvodi,
+                         const char* dat_zalihe);
+
+NARUDZBA* ucitajNarudzbe(const char* datoteka, int* n);
+int       spremiNarudzbe(const char* datoteka, NARUDZBA* nar, int n);
+void      ispisiNarudzbe(NARUDZBA* nar, int n);
+void      urediNarudzbu(const char* datoteka);
+void      obrisiNarudzbu(const char* datoteka);
+void      pretraziNarudzbe(NARUDZBA* nar, int n);
+void      sortirajNarudzbe(NARUDZBA* nar, int n);
+
+#endif /* NARUDZBE_H */
+
+
+
+#define _CRT_SECURE_NO_WARNINGS
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include "Zalihe.h"
+#include "Pomocnici.h"
+
+/* ------------------------------------------------------------------ */
+/*  Static pomocne funkcije (tocka 6)                                  */
+/* ------------------------------------------------------------------ */
+
+static int postojiProizvodID(ZALIHA* z, int n, int id) {
+    if (!z || n <= 0) return 0;
+    for (int i = 0; i < n; i++)
+        if (z[i].proizvod_id == id) return 1;
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Komparatori za qsort i bsearch (tocke 23, 24, 26)                 */
+/* ------------------------------------------------------------------ */
+
+/* Pokazivac na funkciju - sortiranje po kolicini (rastuce) */
+static int usporediKolicinu(const void* a, const void* b) {
+    return ((const ZALIHA*)a)->kolicina -
+           ((const ZALIHA*)b)->kolicina;
+}
+
+/* Komparator za bsearch po proizvod_id */
+static int usporediZalihaID(const void* kljuc, const void* elem) {
+    int id = *(const int*)kljuc;
+    return id - ((const ZALIHA*)elem)->proizvod_id;
+}
+
+/* Komparator za sortiranje po proizvod_id (potrebno prije bsearch-a) */
+static int usporediZalihaIDSort(const void* a, const void* b) {
+    return ((const ZALIHA*)a)->proizvod_id -
+           ((const ZALIHA*)b)->proizvod_id;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Rekurzivni binarni search po proizvod_id (tocka 25)               */
+/*  NAPOMENA: niz mora biti sortiran po proizvod_id prije poziva!     */
+/* ------------------------------------------------------------------ */
+static int binSearchZalihaRek(ZALIHA* z, int lijevo, int desno, int id) {
+    if (lijevo > desno) return -1;
+    int sredina = lijevo + (desno - lijevo) / 2;
+    if (z[sredina].proizvod_id == id)   return sredina;
+    if (z[sredina].proizvod_id < id)
+        return binSearchZalihaRek(z, sredina + 1, desno, id);
+    return binSearchZalihaRek(z, lijevo, sredina - 1, id);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Linearni search po proizvod_id                                    */
+/*  Koristi se kad niz nije garantirano sortiran.                     */
+/* ------------------------------------------------------------------ */
+static int linearSearchZalihaID(ZALIHA* z, int n, int id) {
+    for (int i = 0; i < n; i++)
+        if (z[i].proizvod_id == id) return i;
+    return -1;
+}
+
+/* ------------------------------------------------------------------ */
+/*  CRUD funkcije                                                      */
+/* ------------------------------------------------------------------ */
+
+ZALIHA* ucitajZalihe(const char* datoteka, int* n) {
+    if (!datoteka || !n) return NULL;
+
+    FILE* fp = fopen(datoteka, "rb");
+    if (!fp) { *n = 0; return NULL; }
+
+    rewind(fp);   /* tocka 20 */
+
+    if (fread(n, sizeof(int), 1, fp) != 1 || *n <= 0) {
+        if (ferror(fp)) ispisiGresku("fread (count)");  /* tocka 22 */
+        fclose(fp); *n = 0; return NULL;
+    }
+
+    long pos = ftell(fp);   /* tocka 20 */
+    if (pos < 0) { ispisiGresku("ftell"); fclose(fp); *n = 0; return NULL; }
+
+    ZALIHA* z = malloc((size_t)(*n) * sizeof(ZALIHA));  /* tocka 17 */
+    if (!z) { ispisiGresku("malloc"); fclose(fp); *n = 0; return NULL; }
+
+    if ((int)fread(z, sizeof(ZALIHA), (size_t)(*n), fp) != *n) {
+        if (ferror(fp)) ispisiGresku("fread (data)");
+        free(z); z = NULL; *n = 0; fclose(fp); return NULL;
+    }
+
+    fclose(fp);
+    return z;
+}
+
+int spremiZalihe(const char* datoteka, ZALIHA* z, int n) {
+    if (!datoteka) return 0;
+    return atomicnoSpremi(datoteka, z, n, sizeof(ZALIHA));  /* tocka 21 */
+}
+
+void ispisiZalihe(ZALIHA* z, int n) {
+    if (!z || n <= 0) {   /* tocka 14 */
+        printf("Nema ucitanih zaliha. Koristite opciju 'Ucitaj zalihe'.\n");
+        return;
+    }
+    printf("\n%-10s %-25s %-10s %-12s %-25s\n",
+        "ProizvodID", "Naziv", "Kolicina", "Min.Kolicina", "Lokacija");
+    printf("%-10s %-25s %-10s %-12s %-25s\n",
+        "----------", "-------------------------",
+        "----------", "------------", "-------------------------");
+    for (int i = 0; i < n; i++) {
+        const char* upoz = (z[i].kolicina <= z[i].min_kolicina)
+            ? " [!NISKA ZALIHA]" : "";
+        printf("%-10d %-25s %-10d %-12d %-25s%s\n",
+            z[i].proizvod_id, z[i].naziv,
+            z[i].kolicina, z[i].min_kolicina,
+            z[i].lokacija, upoz);
+    }
+    printf("Ukupno: %d stavk(e) u zalihama\n", n);
+}
+
+void prikaziNiskuZalihu(ZALIHA* z, int n) {
+    if (!z || n <= 0) { printf("Nema ucitanih zaliha.\n"); return; }
+
+    int pronadeno = 0;
+    printf("\n=== UPOZORENJA - NISKA ZALIHA ===\n");
+    for (int i = 0; i < n; i++) {
+        if (z[i].kolicina <= z[i].min_kolicina) {
+            printf("  [!] ProizvodID %-4d | %-25s | Stanje: %d | Min: %d | %s\n",
+                z[i].proizvod_id, z[i].naziv,
+                z[i].kolicina, z[i].min_kolicina, z[i].lokacija);
+            pronadeno++;
+        }
+    }
+    if (!pronadeno) printf("  Sve zalihe su iznad minimalne razine.\n");
+    else            printf("\nUkupno upozorenja: %d\n", pronadeno);
+}
+
+void dodajZalihu(const char* datoteka) {
+    if (!datoteka) return;
+
+    int     n = 0;
+    ZALIHA* z = ucitajZalihe(datoteka, &n);
+
+    ZALIHA novi;
+    memset(&novi, 0, sizeof(ZALIHA));
+
+    printf("ID proizvoda: ");
+    if (!citajInt(&novi.proizvod_id)) {
+        printf("Unos prekinut.\n");
+        if (z) { free(z); z = NULL; }
+        return;
+    }
+
+    if (postojiProizvodID(z, n, novi.proizvod_id)) {
+        printf("Zaliha za proizvod ID %d vec postoji. "
+               "Koristite opciju 'Uredi'.\n", novi.proizvod_id);
+        if (z) { free(z); z = NULL; }
+        return;
+    }
+
+    printf("Naziv proizvoda       : "); citajLiniju(novi.naziv, sizeof(novi.naziv));
+    if (novi.naziv[0] == '\0') {
+        printf("Naziv ne smije biti prazan.\n");
+        if (z) { free(z); z = NULL; }
+        return;
+    }
+
+    printf("Kolicina na stanju    : ");
+    while (1) {
+        if (!citajInt(&novi.kolicina)) {
+            printf("Unos prekinut.\n");
+            if (z) { free(z); z = NULL; }
+            return;
+        }
+        if (novi.kolicina >= 0) break;
+        printf("Unesite pozitivan broj: ");
+    }
+
+    printf("Minimalna kolicina    : ");
+    while (1) {
+        if (!citajInt(&novi.min_kolicina)) {
+            printf("Unos prekinut.\n");
+            if (z) { free(z); z = NULL; }
+            return;
+        }
+        if (novi.min_kolicina >= 0) break;
+        printf("Unesite pozitivan broj: ");
+    }
+
+    printf("Lokacija u skladistu  : "); citajLiniju(novi.lokacija, sizeof(novi.lokacija));
+
+    ZALIHA* tmp = realloc(z, (size_t)(n + 1) * sizeof(ZALIHA));  /* tocka 17 */
+    if (!tmp) {
+        ispisiGresku("realloc");
+        free(z); z = NULL; return;
+    }
+    z = tmp;
+    z[n++] = novi;
+
+    if (spremiZalihe(datoteka, z, n))
+        printf("Zaliha uspjesno dodana za proizvod ID %d.\n", novi.proizvod_id);
+    else
+        printf("Greska pri spremanju.\n");
+
+    free(z); z = NULL;
+}
+
+void urediZalihu(const char* datoteka) {
+    if (!datoteka) return;
+
+    int     n = 0;
+    ZALIHA* z = ucitajZalihe(datoteka, &n);
+    if (!z) { printf("Nema podataka za uredivanje.\n"); return; }
+
+    ispisiZalihe(z, n);
+
+    int id;
+    printf("\nID proizvoda za uredivanje zalihe: ");
+    if (!citajInt(&id)) {
+        printf("Unos prekinut.\n");
+        free(z); z = NULL; return;
+    }
+
+    /*
+     * Koristimo linearni search kako bismo sigurno pronasli zapis
+     * bez obzira na redoslijed elemenata u nizu.
+     */
+    int idx = linearSearchZalihaID(z, n, id);
+    if (idx == -1) {
+        printf("Zaliha za proizvod ID %d nije pronadena.\n", id);
+        free(z); z = NULL; return;
+    }
+
+    printf("\n--- Uredivanje zalihe: %s ---\n", z[idx].naziv);
+    char buf[100];
+
+    printf("Naziv [%s]: ", z[idx].naziv);
+    citajLiniju(buf, sizeof(buf));
+    if (buf[0] != '\0') sigurnoKopiraj(z[idx].naziv, buf, sizeof(z[idx].naziv));
+
+    printf("Kolicina [%d] (-1 za zadrzati): ", z[idx].kolicina);
+    int v;
+    if (!citajInt(&v)) { printf("Unos prekinut.\n"); free(z); z = NULL; return; }
+    if (v >= 0) z[idx].kolicina = v;
+
+    printf("Minimalna kolicina [%d] (-1 za zadrzati): ", z[idx].min_kolicina);
+    if (!citajInt(&v)) { printf("Unos prekinut.\n"); free(z); z = NULL; return; }
+    if (v >= 0) z[idx].min_kolicina = v;
+
+    printf("Lokacija [%s]: ", z[idx].lokacija);
+    citajLiniju(buf, sizeof(buf));
+    if (buf[0] != '\0') sigurnoKopiraj(z[idx].lokacija, buf, sizeof(z[idx].lokacija));
+
+    if (spremiZalihe(datoteka, z, n))
+        printf("Zaliha uspjesno uredena.\n");
+    else
+        printf("Greska pri spremanju.\n");
+
+    free(z); z = NULL;
+}
+
+void obrisiZalihu(const char* datoteka) {
+    if (!datoteka) return;
+
+    int     n = 0;
+    ZALIHA* z = ucitajZalihe(datoteka, &n);
+    if (!z) { printf("Nema podataka za brisanje.\n"); return; }
+
+    ispisiZalihe(z, n);
+
+    int id;
+    printf("\nID proizvoda ciju zalihu zelite obrisati: ");
+    if (!citajInt(&id)) {
+        printf("Unos prekinut.\n");
+        free(z); z = NULL; return;
+    }
+
+    int idx = linearSearchZalihaID(z, n, id);
+    if (idx == -1) {
+        printf("Zaliha za proizvod ID %d nije pronadena.\n", id);
+        free(z); z = NULL; return;
+    }
+
+    char potvrda[10];
+    printf("Brisanje zalihe '%s'. Potvrdite (da/ne): ", z[idx].naziv);
+    citajLiniju(potvrda, sizeof(potvrda));
+
+    if (strcmp(potvrda, "da") != 0) {
+        printf("Brisanje odustano.\n");
+        free(z); z = NULL; return;
+    }
+
+    for (int i = idx; i < n - 1; i++)
+        z[i] = z[i + 1];
+    n--;
+    memset(&z[n], 0, sizeof(ZALIHA));  /* tocka 18 */
+
+    if (spremiZalihe(datoteka, z, n))
+        printf("Zaliha uspjesno obrisana.\n");
+    else
+        printf("Greska pri spremanju.\n");
+
+    free(z); z = NULL;
+}
+
+/*
+ * azurirajZalihuNakonNarudzbe - smanjuje kolicinu u zalihama kada
+ * se doda nova narudzba. Poziva se iz modula Narudzbe.
+ * Vraca 1 ako je azuriranje uspjesno, 0 ako nije (nema dovoljno zaliha
+ * ili proizvod nije pronaden u zalihama).
+ */
+int azurirajZalihuNakonNarudzbe(const char* dat_zalihe,
+                                  int proizvod_id,
+                                  int kolicina) {
+    if (!dat_zalihe || kolicina <= 0) return 0;
+
+    int     n = 0;
+    ZALIHA* z = ucitajZalihe(dat_zalihe, &n);
+    if (!z) {
+        printf("[UPOZORENJE] Zalihe nisu dostupne - narudzba pohranjena "
+               "ali zalihe nisu azurirane.\n");
+        return 0;
+    }
+
+    int idx = linearSearchZalihaID(z, n, proizvod_id);
+    if (idx == -1) {
+        printf("[UPOZORENJE] Proizvod ID %d nije pronaden u zalihama - "
+               "zalihe nisu azurirane.\n", proizvod_id);
+        free(z); z = NULL;
+        return 0;
+    }
+
+    if (z[idx].kolicina < kolicina) {
+        printf("[UPOZORENJE] Nedovoljno zaliha za proizvod '%s'.\n"
+               "             Dostupno: %d, Trazeno: %d\n",
+               z[idx].naziv, z[idx].kolicina, kolicina);
+        free(z); z = NULL;
+        return 0;
+    }
+
+    z[idx].kolicina -= kolicina;
+    printf("Zaliha azurirana: '%s' | Novo stanje: %d kom\n",
+           z[idx].naziv, z[idx].kolicina);
+
+    if (z[idx].kolicina <= z[idx].min_kolicina)
+        printf("[!] UPOZORENJE: Zaliha '%s' pala ispod minimalne razine "
+               "(min: %d)!\n", z[idx].naziv, z[idx].min_kolicina);
+
+    int ok = spremiZalihe(dat_zalihe, z, n);
+    free(z); z = NULL;
+    return ok;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Sortiranje (tocke 23, 26)                                         */
+/* ------------------------------------------------------------------ */
+
+void sortirajZalihe(ZALIHA* z, int n) {
+    if (!z || n <= 1) return;
+    /* tocka 23 - qsort, tocka 26 - pokazivac na funkciju usporediKolicinu */
+    qsort(z, (size_t)n, sizeof(ZALIHA), usporediKolicinu);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Izbornik (tocke 10, 11)                                           */
+/* ------------------------------------------------------------------ */
+
+void izbornikZalihe(const char* datoteka) {
+    int     izbor;
+    ZALIHA* z = NULL;
+    int     n = 0;
+
+    while (1) {
+        printf("\n--- UPRAVLJANJE ZALIHAMA ---\n");
+        printf("  1. Dodaj zalihu\n");
+        printf("  2. Ucitaj zalihe iz datoteke\n");
+        printf("  3. Ispisi sve zalihe\n");
+        printf("  4. Uredi zalihu\n");
+        printf("  5. Obrisi zalihu\n");
+        printf("  6. Prikazi niske zalihe (upozorenja)\n");
+        printf("  7. Povratak\n");
+        printf("  8. Sortiraj zalihe po kolicini\n");
+        printf("Izbor: ");
+
+        if (!citajInt(&izbor)) {
+            printf("Unos prekinut. Povratak u glavni izbornik.\n");
+            if (z) { free(z); z = NULL; n = 0; }
+            return;
+        }
+
+        switch ((OpcijaZalihe)izbor) {
+        case ZALIHA_DODAJ:
+            dodajZalihu(datoteka);
+            break;
+        case ZALIHA_UCITAJ:
+            if (z) { free(z); z = NULL; }
+            z = ucitajZalihe(datoteka, &n);
+            printf(z ? "Ucitano %d stavki zaliha.\n"
+                     : "Datoteka prazna ili ne postoji.\n", n);
+            break;
+        case ZALIHA_ISPISI:
+            ispisiZalihe(z, n);
+            break;
+        case ZALIHA_UREDI:
+            urediZalihu(datoteka);
+            if (z) { free(z); z = NULL; }
+            z = ucitajZalihe(datoteka, &n);
+            break;
+        case ZALIHA_OBRISI:
+            obrisiZalihu(datoteka);
+            if (z) { free(z); z = NULL; }
+            z = ucitajZalihe(datoteka, &n);
+            break;
+        case ZALIHA_NISKA:
+            prikaziNiskuZalihu(z, n);
+            break;
+        case ZALIHA_SORTIRAJ:
+            sortirajZalihe(z, n);
+            printf("Zalihe sortirane po kolicini.\n");
+            ispisiZalihe(z, n);
+            break;
+        case ZALIHA_POVRATAK:
+            if (z) { free(z); z = NULL; n = 0; }
+            return;
+        default:
+            printf("Nevazeci izbor.\n");
+        }
+    }
+}
+
+
+
+
+#ifndef ZALIHE_H
+#define ZALIHE_H
+
+/*  Struktura ZALIHA (tocke 3, 4)*/
+
+typedef struct {
+    int  proizvod_id;
+    char naziv[50];
+    int  kolicina;
+    int  min_kolicina;
+    char lokacija[50];
+} ZALIHA;
+
+/*  Enum tipovi izbornika (tocka 11)*/
+
+typedef enum {
+    ZALIHA_DODAJ = 1,
+    ZALIHA_UCITAJ = 2,
+    ZALIHA_ISPISI = 3,
+    ZALIHA_UREDI = 4,
+    ZALIHA_OBRISI = 5,
+    ZALIHA_NISKA = 6,
+    ZALIHA_POVRATAK = 7,
+    ZALIHA_SORTIRAJ = 8
+} OpcijaZalihe;
+
+/*  Deklaracije funkcija*/
+void    izbornikZalihe(const char* datoteka);
+void    dodajZalihu(const char* datoteka);
+ZALIHA* ucitajZalihe(const char* datoteka, int* n);
+int     spremiZalihe(const char* datoteka, ZALIHA* z, int n);
+void    ispisiZalihe(ZALIHA* z, int n);
+void    urediZalihu(const char* datoteka);
+void    obrisiZalihu(const char* datoteka);
+void    prikaziNiskuZalihu(ZALIHA* z, int n);
+void    sortirajZalihe(ZALIHA* z, int n);
+
+/*
+ * Azurira kolicinu u zalihama nakon sto je narudzba pohranjena.
+ * Poziva se iz Narudzbe.c pri dodavanju nove narudzbe.
+ * Vraca 1 ako je uspjesno, 0 ako nije (nema dovoljno zaliha ili
+ * proizvod nije pronaden).
+ */
+int     azurirajZalihuNakonNarudzbe(const char* dat_zalihe,
+                                     int proizvod_id,
+                                     int kolicina);
+
+#endif /* ZALIHE_H */
+
+
+
+
+
+#ifndef CONFIG_H
+#define CONFIG_H
+
+/* Extern deklaracije globalnih imena datoteka (tocka 8) */
+extern const char* g_datProizvodi;
+extern const char* g_datKupci;
+extern const char* g_datNarudzbe;
+extern const char* g_datZalihe;
+
+#endif /* CONFIG_H */

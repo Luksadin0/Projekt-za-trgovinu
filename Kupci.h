@@ -1,9 +1,7 @@
 #ifndef KUPCI_H
 #define KUPCI_H
 
-/* ------------------------------------------------------------------ */
-/*  Struktura KUPAC (tocke 3, 4)                                       */
-/* ------------------------------------------------------------------ */
+/*  Struktura KUPAC (tocke 3, 4)*/
 typedef struct {
     int  id;
     char ime[50];
@@ -13,9 +11,7 @@ typedef struct {
     char adresa[100];
 } KUPAC;
 
-/* ------------------------------------------------------------------ */
-/*  Enum tipovi izbornika (tocka 11)                                   */
-/* ------------------------------------------------------------------ */
+/*  Enum tipovi izbornika (tocka 11)*/
 typedef enum {
     KUPAC_DODAJ = 1,
     KUPAC_UCITAJ = 2,
@@ -34,11 +30,10 @@ typedef enum {
     KUPAC_PRETRAGA_TELEFON = 4
 } OpcijaKupacPretraga;
 
-/* ------------------------------------------------------------------ */
-/*  Deklaracije funkcija                                               */
-/* ------------------------------------------------------------------ */
-void    izbornikKupci(const char* datoteka);
-void    dodajKupca(const char* datoteka);
+
+/*  Deklaracije funkcija*/
+
+void    izbornikKupci(const char* datoteka);void    dodajKupca(const char* datoteka);
 KUPAC* ucitajKupce(const char* datoteka, int* n);
 int     spremiKupce(const char* datoteka, KUPAC* k, int n);
 void    ispisiKupce(KUPAC* k, int n);

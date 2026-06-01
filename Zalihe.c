@@ -256,9 +256,7 @@ void obrisiZalihu(const char* datoteka) {
     free(z); z = NULL;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Sortiranje (tocke 23, 26)                                          */
-/* ------------------------------------------------------------------ */
+/*  Sortiranje (tocke 23, 26)*/
 
 void sortirajZalihe(ZALIHA* z, int n) {
     if (!z || n <= 1) return;
@@ -266,9 +264,7 @@ void sortirajZalihe(ZALIHA* z, int n) {
     qsort(z, (size_t)n, sizeof(ZALIHA), usporediKolicinu);
 }
 
-/* ------------------------------------------------------------------ */
-/*  Izbornik (tocke 10, 11)                                            */
-/* ------------------------------------------------------------------ */
+/*  Izbornik (tocke 10, 11)*/
 
 void izbornikZalihe(const char* datoteka) {
     int     izbor;

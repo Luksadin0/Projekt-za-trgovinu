@@ -6,9 +6,8 @@
 #include "kupci.h"
 #include "pomocnici.h"
 
-/* ------------------------------------------------------------------ */
-/*  Static pomocne funkcije (tocka 6)                                  */
-/* ------------------------------------------------------------------ */
+
+/*  Static pomocne funkcije (tocka 6)*/
 
 static int sljedeciID(KUPAC* k, int n) {
     int maks = 0;
@@ -17,9 +16,7 @@ static int sljedeciID(KUPAC* k, int n) {
     return maks + 1;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Komparatori za qsort i bsearch (tocke 23, 24, 26)                  */
-/* ------------------------------------------------------------------ */
+/*  Komparatori za qsort i bsearch (tocke 23, 24, 26)*/
 
 /* Pokazivac na funkciju – komparator po prezimenu */
 static int usporediPrezime(const void* a, const void* b) {
@@ -33,9 +30,8 @@ static int usporediID(const void* kljuc, const void* elem) {
     return id - ((const KUPAC*)elem)->id;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Rekurzivni binarni search po ID-u (tocka 25)                       */
-/* ------------------------------------------------------------------ */
+
+/*  Rekurzivni binarni search po ID-u (tocka 25)*/
 static int binSearchRekurzivno(KUPAC* k, int lijevo, int desno,
     int trazeniID) {
     if (lijevo > desno) return -1;
@@ -46,9 +42,6 @@ static int binSearchRekurzivno(KUPAC* k, int lijevo, int desno,
     return binSearchRekurzivno(k, lijevo, sredina - 1, trazeniID);
 }
 
-/* ------------------------------------------------------------------ */
-/*  CRUD funkcije                                                       */
-/* ------------------------------------------------------------------ */
 
 KUPAC* ucitajKupce(const char* datoteka, int* n) {
     if (!datoteka || !n) return NULL;
@@ -258,9 +251,8 @@ void obrisiKupca(const char* datoteka) {
     free(k); k = NULL;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Sortiranje (tocka 23) i pretraga (tocka 24)                        */
-/* ------------------------------------------------------------------ */
+
+/*  Sortiranje (tocka 23) i pretraga (tocka 24)*/
 
 void sortirajKupce(KUPAC* k, int n) {
     if (!k || n <= 1) return;
@@ -351,9 +343,8 @@ void pretraziKupce(KUPAC* k, int n) {
     if (!pron) printf("Nista pronadeno.\n");
 }
 
-/* ------------------------------------------------------------------ */
-/*  Izbornik (tocke 10, 11)                                            */
-/* ------------------------------------------------------------------ */
+
+/*  Izbornik (tocke 10, 11)*/
 
 void izbornikKupci(const char* datoteka) {
     int    izbor;
